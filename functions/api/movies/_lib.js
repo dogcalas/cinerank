@@ -56,7 +56,10 @@ async function fetchJson(url, opts) {
 // fetch (IMDb responde 202-challenge, FilmAffinity 403). Requires
 // CF_ACCOUNT_ID + CF_API_TOKEN (token with Browser Rendering permission).
 async function renderViaCf(url, env, { timeout = 25000 } = {}) {
-  if (!env || !env.CF_ACCOUNT_ID || !env.CF_API_TOKEN) return null;
+  if (!env || !env.CF_ACCOUNT_ID || !env.CF_API_TOKEN)
+    throw new Error(
+      'Browser Rendering sin configurar (faltan CF_ACCOUNT_ID y/o CF_API_TOKEN)'
+    );
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeout);
   try {
@@ -76,10 +79,15 @@ async function renderViaCf(url, env, { timeout = 25000 } = {}) {
         signal: ctrl.signal,
       }
     );
-    const data = await res.json();
-    return data && data.success && data.result ? data.result : null;
-  } catch (_) {
-    return null;
+    const data = await res.json().catch(() => null);
+    if (!data || !data.success || !data.result) {
+      const detail =
+        data && data.errors && data.errors.length
+          ? JSON.stringify(data.errors).slice(0, 300)
+          : `HTTP ${res.status}`;
+      throw new Error(`Browser Rendering falló: ${detail}`);
+    }
+    return data.result;
   } finally {
     clearTimeout(t);
   }
@@ -173,8 +181,12 @@ async function fromImdb(imdbId, env, fresh) {
   }
   let ld = firstJsonLd(html);
   if (!ld) {
-    const rendered = await renderViaCf(pageUrl, env);
-    if (rendered) ld = firstJsonLd(rendered);
+    try {
+      const rendered = await renderViaCf(pageUrl, env);
+      ld = firstJsonLd(rendered);
+    } catch (_) {
+      /* sin rating de IMDb directo; queda el respaldo de OMDb */
+    }
   }
   ld = ld || {};
   const agg = ld.aggregateRating;
@@ -297,56 +309,62 @@ async function fromRottenTomatoes(title, year, fresh) {
 }
 
 // Filmaffinity: no API — scrape the search page, then the film page's rating.
-// FilmAffinity devuelve 403 a fetch plano desde datacenter; cada página se
-// reintenta vía Browser Rendering cuando hay credenciales.
+// FilmAffinity bloquea IPs de datacenter, a veces con 403 y a veces con un
+// 200 cuyo HTML no trae la ficha. Por eso el flujo completo se intenta
+// primero con fetch directo y, si no produce nota, se repite entero con
+// Browser Rendering (navegador real de Cloudflare).
 async function fromFilmaffinity(title, year, env, fresh) {
-  const getHtml = async (url) => {
-    try {
-      return await fetchText(url, { timeout: 9000, fresh });
-    } catch (e) {
-      const rendered = await renderViaCf(url, env);
-      if (rendered) return rendered;
-      throw e;
-    }
-  };
   const searchUrl =
     `https://www.filmaffinity.com/es/search.php?stext=` +
     encodeURIComponent(title);
-  let html = await getHtml(searchUrl);
 
-  // A single hit redirects straight to the film page; multiple hits show a list.
-  const isFilmPage = /property=["']og:url["'][^>]*film\d+\.html/.test(html) ||
-    /<body[^>]*id=["']film-page/.test(html);
+  const attempt = async (get) => {
+    let html = await get(searchUrl);
 
-  if (!isFilmPage) {
-    const link = html.match(/\/es\/film(\d+)\.html/);
-    if (!link) return null;
-    html = await getHtml(`https://www.filmaffinity.com/es/film${link[1]}.html`);
-  }
+    // A single hit redirects straight to the film page; multiple hits show a list.
+    const isFilmPage = /property=["']og:url["'][^>]*film\d+\.html/.test(html) ||
+      /<body[^>]*id=["']film-page/.test(html);
 
-  let value = null;
-  const ld = firstJsonLd(html);
-  if (ld && ld.aggregateRating && ld.aggregateRating.ratingValue != null) {
-    value = parseFloat(String(ld.aggregateRating.ratingValue).replace(',', '.'));
-  }
-  if (value == null) {
-    const m =
-      html.match(/itemprop=["']ratingValue["'][^>]*content=["']([\d.,]+)["']/) ||
-      html.match(/id=["']movie-rat-avg["'][^>]*>\s*([\d.,]+)/);
-    if (m) value = parseFloat(m[1].replace(',', '.'));
-  }
-  if (value == null || Number.isNaN(value)) return null;
+    if (!isFilmPage) {
+      const link = html.match(/\/es\/film(\d+)\.html/);
+      if (!link) return null;
+      html = await get(`https://www.filmaffinity.com/es/film${link[1]}.html`);
+    }
 
-  const urlMatch = html.match(/\/es\/film\d+\.html/);
-  return {
-    source: 'FilmAffinity',
-    key: 'filmaffinity',
-    prio: 1,
-    native: `${value.toFixed(1)}/10`,
-    value,
-    scale: 10,
-    url: urlMatch ? `https://www.filmaffinity.com${urlMatch[0]}` : searchUrl,
+    let value = null;
+    const ld = firstJsonLd(html);
+    if (ld && ld.aggregateRating && ld.aggregateRating.ratingValue != null) {
+      value = parseFloat(String(ld.aggregateRating.ratingValue).replace(',', '.'));
+    }
+    if (value == null) {
+      const m =
+        html.match(/itemprop=["']ratingValue["'][^>]*content=["']([\d.,]+)["']/) ||
+        html.match(/id=["']movie-rat-avg["'][^>]*>\s*([\d.,]+)/);
+      if (m) value = parseFloat(m[1].replace(',', '.'));
+    }
+    if (value == null || Number.isNaN(value)) return null;
+
+    const urlMatch = html.match(/\/es\/film\d+\.html/);
+    return {
+      source: 'FilmAffinity',
+      key: 'filmaffinity',
+      prio: 1,
+      native: `${value.toFixed(1)}/10`,
+      value,
+      scale: 10,
+      url: urlMatch ? `https://www.filmaffinity.com${urlMatch[0]}` : searchUrl,
+    };
   };
+
+  try {
+    const direct = await attempt((u) => fetchText(u, { timeout: 9000, fresh }));
+    if (direct) return direct;
+  } catch (_) {
+    /* bloqueado: reintenta con navegador real */
+  }
+  // Si tampoco hay credenciales CF_*, esto lanza un error descriptivo que
+  // aparece en el array errors de la respuesta.
+  return attempt((u) => renderViaCf(u, env));
 }
 
 // OMDb (optional API key): reliable IMDb + RT + Metacritic + solid metadata.
