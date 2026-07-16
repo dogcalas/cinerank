@@ -4,12 +4,17 @@
 import { renderViaCf, json } from './_lib.js';
 
 export async function onRequestGet({ request, env }) {
-  const u = new URL(request.url).searchParams.get('url') || '';
+  const p = new URL(request.url).searchParams;
+  const u = p.get('url') || '';
   if (!/^https:\/\/www\.filmaffinity\.com\//.test(u)) {
     return json({ error: 'solo URLs de filmaffinity.com' }, 400);
   }
   try {
-    const html = await renderViaCf(u, env);
+    const html = await renderViaCf(u, env, {
+      timeout: Number(p.get('timeout')) || 25000,
+      waitUntil: p.get('waitUntil') || 'domcontentloaded',
+      waitMs: Number(p.get('waitMs')) || 0,
+    });
     return json(
       {
         ok: true,

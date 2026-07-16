@@ -55,7 +55,11 @@ async function fetchJson(url, opts) {
 // browser and returns its HTML. Bypasses the anti-bot walls that block plain
 // fetch (IMDb responde 202-challenge, FilmAffinity 403). Requires
 // CF_ACCOUNT_ID + CF_API_TOKEN (token with Browser Rendering permission).
-export async function renderViaCf(url, env, { timeout = 25000 } = {}) {
+export async function renderViaCf(
+  url,
+  env,
+  { timeout = 25000, waitUntil = 'domcontentloaded', waitMs = 0 } = {}
+) {
   if (!env || !env.CF_ACCOUNT_ID || !env.CF_API_TOKEN)
     throw new Error(
       'Browser Rendering sin configurar (faltan CF_ACCOUNT_ID y/o CF_API_TOKEN)'
@@ -73,8 +77,11 @@ export async function renderViaCf(url, env, { timeout = 25000 } = {}) {
         },
         body: JSON.stringify({
           url,
-          rejectResourceTypes: ['image', 'media', 'font', 'stylesheet'],
-          gotoOptions: { waitUntil: 'domcontentloaded', timeout: timeout - 5000 },
+          rejectResourceTypes: ['image', 'media', 'font'],
+          gotoOptions: { waitUntil, timeout: Math.max(timeout - 5000, 5000) },
+          // Espera extra tras cargar: da tiempo a que el challenge
+          // "Just a moment…" de Cloudflare se auto-resuelva.
+          ...(waitMs > 0 ? { waitForTimeout: waitMs } : {}),
         }),
         signal: ctrl.signal,
       }
