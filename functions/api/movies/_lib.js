@@ -51,6 +51,18 @@ async function fetchJson(url, opts) {
   return JSON.parse(await fetchText(url, opts));
 }
 
+// TEMPORAL: usado por el endpoint de depuración.
+export function fetchDebug(url) {
+  return fetchText(url, {
+    timeout: 15000,
+    fresh: true,
+    headers: {
+      'User-Agent': 'CineRank/1.0 (https://github.com/dogcalas/cinerank)',
+      Accept: 'application/sparql-results+json, application/json, text/html;q=0.9',
+    },
+  });
+}
+
 // Cloudflare Browser Rendering (REST): renders the page in a real headless
 // browser and returns its HTML. Bypasses the anti-bot walls that block plain
 // fetch (IMDb responde 202-challenge, FilmAffinity 403). Requires

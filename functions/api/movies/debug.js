@@ -1,20 +1,25 @@
-// TEMPORAL: inspecciona lo que Browser Rendering recibe de FilmAffinity.
-// Restringido a filmaffinity.com para no ser un proxy abierto. Eliminar
+// TEMPORAL: inspecciona lo que el edge recibe de las fuentes de FilmAffinity.
+// Restringido a hosts concretos para no ser un proxy abierto. Eliminar
 // cuando termine la depuración.
-import { renderViaCf, json } from './_lib.js';
+import { renderViaCf, fetchDebug, json } from './_lib.js';
+
+const ALLOWED = /^https:\/\/(www\.filmaffinity\.com|query\.wikidata\.org|archive\.org|web\.archive\.org)\//;
 
 export async function onRequestGet({ request, env }) {
   const p = new URL(request.url).searchParams;
   const u = p.get('url') || '';
-  if (!/^https:\/\/www\.filmaffinity\.com\//.test(u)) {
-    return json({ error: 'solo URLs de filmaffinity.com' }, 400);
+  if (!ALLOWED.test(u)) {
+    return json({ error: 'host no permitido' }, 400);
   }
   try {
-    const html = await renderViaCf(u, env, {
-      timeout: Number(p.get('timeout')) || 25000,
-      waitUntil: p.get('waitUntil') || 'domcontentloaded',
-      waitMs: Number(p.get('waitMs')) || 0,
-    });
+    const html =
+      p.get('mode') === 'fetch'
+        ? await fetchDebug(u)
+        : await renderViaCf(u, env, {
+            timeout: Number(p.get('timeout')) || 25000,
+            waitUntil: p.get('waitUntil') || 'domcontentloaded',
+            waitMs: Number(p.get('waitMs')) || 0,
+          });
     return json(
       {
         ok: true,
