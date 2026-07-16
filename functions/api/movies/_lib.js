@@ -364,7 +364,12 @@ async function fromFilmaffinity(title, year, env, fresh) {
   }
   // Si tampoco hay credenciales CF_*, esto lanza un error descriptivo que
   // aparece en el array errors de la respuesta.
-  return attempt((u) => renderViaCf(u, env));
+  const viaBrowser = await attempt((u) => renderViaCf(u, env));
+  if (!viaBrowser)
+    throw new Error(
+      'sin ficha ni nota tras Browser Rendering (¿bloqueo o película sin votos?)'
+    );
+  return viaBrowser;
 }
 
 // OMDb (optional API key): reliable IMDb + RT + Metacritic + solid metadata.
@@ -570,6 +575,7 @@ export async function aggregate({ imdbId, title, year, env, fresh = false }) {
     : null;
 
   return {
+    version: 3, // para distinguir despliegues al depurar
     imdbId,
     meta,
     ratings: unique.map((r) => ({
