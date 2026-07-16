@@ -154,14 +154,19 @@
     .card .rm:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
 
     .poster-wrap { position: relative; aspect-ratio: 16/9; overflow: hidden; background: #14141c; }
-    .poster-wrap img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.55); }
+    /* Los pósters son verticales: capa de fondo difuminada a sangre + póster
+       completo (contain) encima, para que no se vea cortado. */
+    .poster-wrap .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(22px) brightness(0.4) saturate(1.2); transform: scale(1.15); }
+    .poster-wrap .fg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
     .poster-wrap .noimg { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; }
     .poster-wrap .overlay { position: absolute; inset: 0; background: linear-gradient(to top, #0e0e14 6%, rgba(14,14,20,0.3) 55%, transparent); display: flex; align-items: flex-end; padding: 1rem; }
     .poster-wrap .title { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; text-shadow: 0 2px 12px rgba(0,0,0,0.7); }
     .poster-wrap .title span { color: var(--text-muted); font-weight: 500; }
 
+    /* Vive en .card-body (no en .poster-wrap, cuyo overflow:hidden lo recortaba)
+       y sobresale hacia el póster. */
     .avg-badge {
-      position: absolute; bottom: -26px; right: 1rem; z-index: 2;
+      position: absolute; top: -40px; right: 1rem; z-index: 2;
       width: 66px; height: 66px; border-radius: 50%;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       background: #0e0e14; border: 2px solid var(--accent);
@@ -170,7 +175,7 @@
     .avg-badge .n { font-family: var(--mono); font-weight: 600; font-size: 1.25rem; line-height: 1; }
     .avg-badge .l { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
-    .card-body { padding: 1.5rem 1.1rem 1.1rem; }
+    .card-body { position: relative; padding: 1.5rem 1.1rem 1.1rem; }
     .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; }
     .chip { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); background: var(--bg-glass); border: 1px solid var(--border); padding: 0.2rem 0.55rem; border-radius: 50px; }
     .chip.g { color: #c4b5fd; border-color: rgba(139,92,246,0.3); }
@@ -433,7 +438,11 @@
           if (idx >= 0) movies.splice(idx, 1);
           flash(data.error || t('noResults'));
         } else {
-          data.meta = { ...movies[idx].meta, ...data.meta };
+          // Merge keeping what the suggestion already had (poster, year…) when
+          // the API returns null/empty for that field.
+          const filled = Object.fromEntries(Object.entries(data.meta || {}).filter(
+            ([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)));
+          data.meta = { ...movies[idx].meta, ...filled };
           if (idx >= 0) movies[idx] = data;
         }
       } catch (e) {
@@ -480,7 +489,7 @@
     function card(m, best) {
       if (m.loading) return `
         <div class="card skeleton">
-          <div class="poster-wrap">${m.meta.poster ? `<img src="${m.meta.poster}" alt="">` : '<div class="noimg">🎬</div>'}
+          <div class="poster-wrap">${m.meta.poster ? `<img class="bg" src="${m.meta.poster}" alt="" aria-hidden="true"><img class="fg" src="${m.meta.poster}" alt="">` : '<div class="noimg">🎬</div>'}
             <div class="overlay"><div class="title">${esc(m.meta.title || '')}</div></div>
           </div>
           <div class="card-body"><div class="chips"><span class="chip">${t('loading')}</span></div>
@@ -517,14 +526,14 @@
           ${isBest ? `<span class="best-tag">🏆 ${t('winner')}</span>` : ''}
           <button class="rm" data-rm="${m.imdbId}" title="Quitar">✕</button>
           <div class="poster-wrap">
-            ${meta.poster ? `<img src="${meta.poster}" alt="${esc(meta.title || '')}">` : '<div class="noimg">🎬</div>'}
+            ${meta.poster ? `<img class="bg" src="${meta.poster}" alt="" aria-hidden="true"><img class="fg" src="${meta.poster}" alt="${esc(meta.title || '')}">` : '<div class="noimg">🎬</div>'}
             <div class="overlay"><div class="title">${esc(meta.title || '')} ${meta.year ? `<span>(${meta.year})</span>` : ''}</div></div>
+          </div>
+          <div class="card-body">
             <div class="avg-badge" style="border-color:${avg != null ? scoreColor(avg) : 'var(--border)'}">
               <span class="n" style="color:${avg != null ? scoreColor(avg) : 'var(--text-dim)'}">${avg != null ? fmt(avg) : '—'}</span>
               <span class="l">${t('sources', m.sourceCount || 0)}</span>
             </div>
-          </div>
-          <div class="card-body">
             ${chips.length ? `<div class="chips">${chips.join('')}</div>` : ''}
             <div class="ratings">${rows}</div>
             ${meta.plot ? `<details class="plot"><summary>${t('plotToggle')}</summary><p>${esc(meta.plot)}</p></details>` : ''}

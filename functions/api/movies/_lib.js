@@ -48,6 +48,40 @@ async function fetchJson(url, opts) {
   return JSON.parse(await fetchText(url, opts));
 }
 
+// Cloudflare Browser Rendering (REST): renders the page in a real headless
+// browser and returns its HTML. Bypasses the anti-bot walls that block plain
+// fetch (IMDb responde 202-challenge, FilmAffinity 403). Requires
+// CF_ACCOUNT_ID + CF_API_TOKEN (token with Browser Rendering permission).
+async function renderViaCf(url, env, { timeout = 25000 } = {}) {
+  if (!env || !env.CF_ACCOUNT_ID || !env.CF_API_TOKEN) return null;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/content`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.CF_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          rejectResourceTypes: ['image', 'media', 'font', 'stylesheet'],
+          gotoOptions: { waitUntil: 'domcontentloaded', timeout: timeout - 5000 },
+        }),
+        signal: ctrl.signal,
+      }
+    );
+    const data = await res.json();
+    return data && data.success && data.result ? data.result : null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // ---------- text utilities ----------
 
 export function normalizeTitle(s) {
@@ -121,11 +155,24 @@ export async function searchImdb(query) {
 // Each returns { source, key, native, value, scale, url, votes? } or null.
 
 // IMDb: scrape the title page JSON-LD (rating + rich metadata). No key.
-async function fromImdb(imdbId) {
-  const html = await fetchText(`https://www.imdb.com/title/${imdbId}/`, {
-    headers: { 'Accept-Language': 'en-US,en;q=0.9' },
-  });
-  const ld = firstJsonLd(html) || {};
+// IMDb suele responder 202 con una página-challenge anti-bot a fetch plano;
+// en ese caso reintenta vía Browser Rendering si hay credenciales.
+async function fromImdb(imdbId, env) {
+  const pageUrl = `https://www.imdb.com/title/${imdbId}/`;
+  let html = '';
+  try {
+    html = await fetchText(pageUrl, {
+      headers: { 'Accept-Language': 'en-US,en;q=0.9' },
+    });
+  } catch (_) {
+    /* fall through to browser rendering */
+  }
+  let ld = firstJsonLd(html);
+  if (!ld) {
+    const rendered = await renderViaCf(pageUrl, env);
+    if (rendered) ld = firstJsonLd(rendered);
+  }
+  ld = ld || {};
   const agg = ld.aggregateRating;
   const rating = agg ? parseFloat(agg.ratingValue) : null;
   const meta = {
@@ -149,62 +196,82 @@ async function fromImdb(imdbId) {
       ? {
           source: 'IMDb',
           key: 'imdb',
+          prio: 1,
           native: `${rating.toFixed(1)}/10`,
           value: rating,
           scale: 10,
           votes: agg && agg.ratingCount ? Number(agg.ratingCount) : null,
-          url: `https://www.imdb.com/title/${imdbId}/`,
+          url: pageUrl,
         }
       : null;
   return { rec, meta };
 }
 
-// Rotten Tomatoes: public search API gives critics + audience scores directly.
+// Rotten Tomatoes: the old /napi/search endpoint was removed (404). The HTML
+// search page still works without a key: each result is a
+// <search-page-media-row> with release-year + tomatometer-score attributes.
+// The film page then carries both scores in a <script id="media-scorecard-json">.
 async function fromRottenTomatoes(title, year) {
-  const url =
-    `https://www.rottentomatoes.com/napi/search/all?type=movie&searchQuery=` +
-    encodeURIComponent(title);
-  const data = await fetchJson(url, { timeout: 9000 });
-  // The payload shape has varied over time; look for an array of movies wherever it is.
-  const bucket = data.movies || data.movie || {};
-  const items = Array.isArray(bucket) ? bucket : bucket.items || [];
-  if (!items.length) return null;
-
+  const searchHtml = await fetchText(
+    `https://www.rottentomatoes.com/search?search=${encodeURIComponent(title)}`,
+    { timeout: 9000 }
+  );
+  const rows = [...searchHtml.matchAll(
+    /<search-page-media-row([\s\S]*?)<\/search-page-media-row>/g
+  )];
   const want = normalizeTitle(title);
-  const scored = items
-    .map((it) => {
-      const name = it.name || it.title || (it.titleText && it.titleText.text) || '';
-      const yr = String(it.releaseYear || it.year || '').slice(0, 4);
-      let score = 0;
-      const n = normalizeTitle(name);
-      if (n === want) score += 3;
-      else if (n.includes(want) || want.includes(n)) score += 1;
-      if (year && yr && Math.abs(Number(yr) - Number(year)) <= 1) score += 2;
-      return { it, name, yr, score };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  const best = scored[0];
+  let best = null;
+  for (const row of rows) {
+    const block = row[0];
+    const href = (block.match(
+      /href="(https:\/\/www\.rottentomatoes\.com\/m\/[^"]+)"/
+    ) || [])[1];
+    if (!href) continue; // solo películas (/m/); descarta series (/tv/)
+    const attr = (name) => {
+      const m = block.match(new RegExp(`${name}="([^"]*)"`));
+      return m ? m[1] : '';
+    };
+    const nameM = block.match(/slot="title"[^>]*>([\s\S]*?)<\/a>/);
+    const name = nameM ? nameM[1].trim() : '';
+    let score = 0;
+    const n = normalizeTitle(name);
+    if (n === want) score += 3;
+    else if (n.includes(want) || want.includes(n)) score += 1;
+    const yr = attr('release-year');
+    if (year && yr && Math.abs(Number(yr) - Number(year)) <= 1) score += 2;
+    const tomato = attr('tomatometer-score');
+    if (!best || score > best.score)
+      best = { href, score, tomato: tomato !== '' ? Number(tomato) : null };
+  }
   if (!best || best.score === 0) return null;
-  const it = best.it;
 
-  const critics =
-    (it.criticsScore && (it.criticsScore.value ?? it.criticsScore.score)) ??
-    it.meterScore ??
-    it.tomatometerScore ??
-    null;
-  const audience =
-    (it.audienceScore && (it.audienceScore.value ?? it.audienceScore.score)) ??
-    it.audienceScoreValue ??
-    null;
-  const slug = it.url || (it.vanity ? `/m/${it.vanity}` : null);
-  const rtUrl = slug ? `https://www.rottentomatoes.com${slug}` : null;
+  // La página de la ficha añade el score del público (Popcornmeter); si falla,
+  // nos quedamos al menos con el Tomatómetro de la búsqueda.
+  let critics = best.tomato;
+  let audience = null;
+  const rtUrl = best.href;
+  try {
+    const filmHtml = await fetchText(rtUrl, { timeout: 9000 });
+    const m = filmHtml.match(
+      /<script[^>]*id="media-scorecard-json"[^>]*>([\s\S]*?)<\/script>/
+    );
+    if (m) {
+      const sc = JSON.parse(m[1]);
+      const c = sc.criticsScore && sc.criticsScore.score;
+      const a = sc.audienceScore && sc.audienceScore.score;
+      if (c != null && c !== '' && !Number.isNaN(Number(c))) critics = Number(c);
+      if (a != null && a !== '' && !Number.isNaN(Number(a))) audience = Number(a);
+    }
+  } catch (_) {
+    /* keep search-page tomatometer */
+  }
 
   const recs = [];
   if (critics != null && !Number.isNaN(Number(critics)))
     recs.push({
       source: 'Rotten Tomatoes',
       key: 'rt_critics',
+      prio: 1,
       label: 'Tomatómetro',
       native: `${Number(critics)}%`,
       value: Number(critics),
@@ -215,6 +282,7 @@ async function fromRottenTomatoes(title, year) {
     recs.push({
       source: 'RT Audiencia',
       key: 'rt_audience',
+      prio: 1,
       label: 'Público',
       native: `${Number(audience)}%`,
       value: Number(audience),
@@ -225,11 +293,22 @@ async function fromRottenTomatoes(title, year) {
 }
 
 // Filmaffinity: no API — scrape the search page, then the film page's rating.
-async function fromFilmaffinity(title, year) {
+// FilmAffinity devuelve 403 a fetch plano desde datacenter; cada página se
+// reintenta vía Browser Rendering cuando hay credenciales.
+async function fromFilmaffinity(title, year, env) {
+  const getHtml = async (url) => {
+    try {
+      return await fetchText(url, { timeout: 9000 });
+    } catch (e) {
+      const rendered = await renderViaCf(url, env);
+      if (rendered) return rendered;
+      throw e;
+    }
+  };
   const searchUrl =
     `https://www.filmaffinity.com/es/search.php?stext=` +
     encodeURIComponent(title);
-  let html = await fetchText(searchUrl, { timeout: 9000 });
+  let html = await getHtml(searchUrl);
 
   // A single hit redirects straight to the film page; multiple hits show a list.
   const isFilmPage = /property=["']og:url["'][^>]*film\d+\.html/.test(html) ||
@@ -238,10 +317,7 @@ async function fromFilmaffinity(title, year) {
   if (!isFilmPage) {
     const link = html.match(/\/es\/film(\d+)\.html/);
     if (!link) return null;
-    html = await fetchText(
-      `https://www.filmaffinity.com/es/film${link[1]}.html`,
-      { timeout: 9000 }
-    );
+    html = await getHtml(`https://www.filmaffinity.com/es/film${link[1]}.html`);
   }
 
   let value = null;
@@ -261,6 +337,7 @@ async function fromFilmaffinity(title, year) {
   return {
     source: 'FilmAffinity',
     key: 'filmaffinity',
+    prio: 1,
     native: `${value.toFixed(1)}/10`,
     value,
     scale: 10,
@@ -283,13 +360,45 @@ async function fromOmdb(imdbId, apiKey) {
         recs.push({
           source: 'Metacritic',
           key: 'metacritic',
+          prio: 1,
           native: `${v}/100`,
           value: v,
           scale: 100,
           url: null,
         });
     }
+    // Respaldo del Tomatómetro cuando el scraping de RT no encuentra la ficha.
+    if (r.Source === 'Rotten Tomatoes') {
+      const v = parseInt(r.Value, 10);
+      if (!Number.isNaN(v))
+        recs.push({
+          source: 'Rotten Tomatoes',
+          key: 'rt_critics',
+          prio: 2,
+          label: 'Tomatómetro',
+          native: `${v}%`,
+          value: v,
+          scale: 100,
+          url: null,
+        });
+    }
   }
+  // Respaldo de la nota IMDb cuando la ficha está tras el challenge anti-bot.
+  const imdbRating = parseFloat(data.imdbRating);
+  if (data.imdbRating && data.imdbRating !== 'N/A' && !Number.isNaN(imdbRating))
+    recs.push({
+      source: 'IMDb',
+      key: 'imdb',
+      prio: 2,
+      native: `${imdbRating.toFixed(1)}/10`,
+      value: imdbRating,
+      scale: 10,
+      votes:
+        data.imdbVotes && data.imdbVotes !== 'N/A'
+          ? Number(data.imdbVotes.replace(/,/g, ''))
+          : null,
+      url: `https://www.imdb.com/title/${imdbId}/`,
+    });
   const meta = {
     title: data.Title || null,
     year: data.Year || null,
@@ -324,6 +433,7 @@ async function fromTmdb(imdbId, apiKey) {
       ? {
           source: 'TMDb',
           key: 'tmdb',
+          prio: 1,
           native: `${rating.toFixed(1)}/10`,
           value: rating,
           scale: 10,
@@ -375,14 +485,14 @@ export async function aggregate({ imdbId, title, year, env }) {
 
   // Kick off every source in parallel; settle so one failure can't sink the rest.
   const tasks = [
-    fromImdb(imdbId)
+    fromImdb(imdbId, env)
       .then((r) => {
         if (r.rec) ratings.push(r.rec);
         Object.assign(meta, mergeMeta(meta, r.meta));
       })
       .catch((e) => errors.push({ source: 'IMDb', error: String(e) })),
 
-    fromFilmaffinity(title, year)
+    fromFilmaffinity(title, year, env)
       .then((r) => r && ratings.push(r))
       .catch((e) => errors.push({ source: 'FilmAffinity', error: String(e) })),
 
@@ -418,13 +528,18 @@ export async function aggregate({ imdbId, title, year, env }) {
 
   await Promise.allSettled(tasks);
 
-  // De-duplicate by key (keep first) and compute the /10 average.
+  // De-duplicate by key (prefer the direct source, prio 1, over the OMDb
+  // backup, prio 2 — push order depends on which fetch resolves first).
   const seen = new Set();
-  const unique = ratings.filter((r) => {
-    if (seen.has(r.key)) return false;
-    seen.add(r.key);
-    return true;
-  });
+  const unique = ratings
+    .slice()
+    .sort((a, b) => (a.prio || 1) - (b.prio || 1))
+    .filter((r) => {
+      if (seen.has(r.key)) return false;
+      seen.add(r.key);
+      return true;
+    })
+    .map(({ prio, ...r }) => r);
   const normalized = unique.map((r) => (r.value / r.scale) * 10);
   const average = normalized.length
     ? Math.round(
