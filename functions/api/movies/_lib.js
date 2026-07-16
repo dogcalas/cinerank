@@ -55,7 +55,7 @@ async function fetchJson(url, opts) {
 // browser and returns its HTML. Bypasses the anti-bot walls that block plain
 // fetch (IMDb responde 202-challenge, FilmAffinity 403). Requires
 // CF_ACCOUNT_ID + CF_API_TOKEN (token with Browser Rendering permission).
-async function renderViaCf(url, env, { timeout = 25000 } = {}) {
+export async function renderViaCf(url, env, { timeout = 25000 } = {}) {
   if (!env || !env.CF_ACCOUNT_ID || !env.CF_API_TOKEN)
     throw new Error(
       'Browser Rendering sin configurar (faltan CF_ACCOUNT_ID y/o CF_API_TOKEN)'
