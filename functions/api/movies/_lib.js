@@ -246,7 +246,10 @@ async function fromImdb(imdbId, env, fresh) {
 // search page still works without a key: each result is a
 // <search-page-media-row> with release-year + tomatometer-score attributes.
 // The film page then carries both scores in a <script id="media-scorecard-json">.
-async function fromRottenTomatoes(title, year, fresh) {
+async function fromRottenTomatoes(title, year, fresh, type) {
+  // Las filas de series no traen año en la búsqueda; el tipo (de la búsqueda
+  // de IMDb) decide si preferimos fichas /tv/ o /m/.
+  const wantTv = /tv(Series|MiniSeries)/i.test(type || '');
   const searchHtml = await fetchText(
     `https://www.rottentomatoes.com/search?search=${encodeURIComponent(title)}`,
     { timeout: 9000, fresh }
@@ -258,10 +261,11 @@ async function fromRottenTomatoes(title, year, fresh) {
   let best = null;
   for (const row of rows) {
     const block = row[0];
+    // /m/ = películas, /tv/ = series; ambas fichas llevan media-scorecard-json
     const href = (block.match(
-      /href="(https:\/\/www\.rottentomatoes\.com\/m\/[^"]+)"/
+      /href="(https:\/\/www\.rottentomatoes\.com\/(?:m|tv)\/[^"/]+)["/]/
     ) || [])[1];
-    if (!href) continue; // solo películas (/m/); descarta series (/tv/)
+    if (!href) continue;
     const attr = (name) => {
       const m = block.match(new RegExp(`${name}="([^"]*)"`));
       return m ? m[1] : '';
@@ -272,8 +276,9 @@ async function fromRottenTomatoes(title, year, fresh) {
     const n = normalizeTitle(name);
     if (n === want) score += 3;
     else if (n.includes(want) || want.includes(n)) score += 1;
-    const yr = attr('release-year');
+    const yr = attr('release-year') || attr('start-year'); // series: start-year
     if (year && yr && Math.abs(Number(yr) - Number(year)) <= 1) score += 2;
+    if (href.includes('/tv/') === wantTv) score += 3; // tipo correcto
     const tomato = attr('tomatometer-score');
     if (!best || score > best.score)
       best = { href, score, tomato: tomato !== '' ? Number(tomato) : null };
@@ -404,18 +409,17 @@ async function fromFilmaffinity(imdbId, title, year, env, fresh) {
 // bloquean IPs de datacenter.
 async function filmaffinityViaArchive(imdbId, fresh) {
   if (!imdbId) return null;
+  // UA honesto: Wikidata lo exige y archive.org rechaza UA de navegador
+  // falso desde IPs de datacenter (el fetchDebug con este UA sí pasó).
+  const headers = {
+    'User-Agent': 'CineRank/1.0 (https://github.com/dogcalas/cinerank)',
+    Accept: 'application/sparql-results+json, application/json, text/html;q=0.9',
+  };
   const sparql =
     `SELECT ?fa WHERE { ?item wdt:P345 "${imdbId}". ?item wdt:P480 ?fa. } LIMIT 1`;
   const wd = await fetchJson(
     `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`,
-    {
-      timeout: 8000,
-      fresh,
-      headers: {
-        'User-Agent': 'CineRank/1.0 (https://github.com/dogcalas/cinerank)',
-        Accept: 'application/sparql-results+json',
-      },
-    }
+    { timeout: 12000, fresh, headers }
   );
   const binding = wd.results && wd.results.bindings && wd.results.bindings[0];
   const faId = binding && binding.fa && binding.fa.value;
@@ -425,14 +429,15 @@ async function filmaffinityViaArchive(imdbId, fresh) {
     `https://archive.org/wayback/available?url=${encodeURIComponent(
       `filmaffinity.com/es/film${faId}.html`
     )}`,
-    { timeout: 8000, fresh }
+    { timeout: 12000, fresh, headers }
   );
   const snap = avail.archived_snapshots && avail.archived_snapshots.closest;
   if (!snap || !snap.available || !snap.url) return null;
 
   const html = await fetchText(snap.url.replace(/^http:/, 'https:'), {
-    timeout: 15000,
+    timeout: 20000,
     fresh,
+    headers,
   });
   let value = null;
   const ld = firstJsonLd(html);
@@ -537,8 +542,9 @@ async function fromTmdb(imdbId, apiKey, fresh) {
       `?external_source=imdb_id&api_key=${apiKey}&language=es-ES`,
     { timeout: 8000, fresh }
   );
-  const hit = (data.movie_results && data.movie_results[0]) ||
-    (data.tv_results && data.tv_results[0]);
+  const movieHit = data.movie_results && data.movie_results[0];
+  const tvHit = data.tv_results && data.tv_results[0];
+  const hit = movieHit || tvHit;
   if (!hit) return null;
   const rating = hit.vote_average ? Number(hit.vote_average) : null;
   const rec =
@@ -551,7 +557,7 @@ async function fromTmdb(imdbId, apiKey, fresh) {
           value: rating,
           scale: 10,
           votes: hit.vote_count || null,
-          url: `https://www.themoviedb.org/movie/${hit.id}`,
+          url: `https://www.themoviedb.org/${movieHit ? 'movie' : 'tv'}/${hit.id}`,
         }
       : null;
   const meta = {
@@ -581,7 +587,7 @@ function mergeMeta(base, incoming) {
   return out;
 }
 
-export async function aggregate({ imdbId, title, year, env, fresh = false }) {
+export async function aggregate({ imdbId, title, year, env, fresh = false, type = '' }) {
   const meta = {
     title: title || null,
     year: year || null,
@@ -609,7 +615,7 @@ export async function aggregate({ imdbId, title, year, env, fresh = false }) {
       .then((r) => r && ratings.push(r))
       .catch((e) => errors.push({ source: 'FilmAffinity', error: String(e) })),
 
-    fromRottenTomatoes(title, year, fresh)
+    fromRottenTomatoes(title, year, fresh, type)
       .then((r) => r && r.forEach((x) => ratings.push(x)))
       .catch((e) => errors.push({ source: 'Rotten Tomatoes', error: String(e) })),
   ];

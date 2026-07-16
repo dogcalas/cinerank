@@ -442,12 +442,13 @@
 
       // optimistic skeleton card
       const skeletonId = item.imdbId;
-      movies.push({ imdbId: skeletonId, loading: true, meta: { title: item.title, year: item.year, poster: item.poster }, ratings: [], average: null });
+      movies.push({ imdbId: skeletonId, loading: true, meta: { title: item.title, year: item.year, poster: item.poster, type: item.type }, ratings: [], average: null });
       render();
 
       try {
         const url = `/api/movies/ratings?imdb=${encodeURIComponent(item.imdbId)}` +
-                    `&title=${encodeURIComponent(item.title)}&year=${encodeURIComponent(item.year || '')}`;
+                    `&title=${encodeURIComponent(item.title)}&year=${encodeURIComponent(item.year || '')}` +
+                    `&type=${encodeURIComponent(item.type || '')}`;
         const res = await fetch(url);
         const data = await res.json();
         const idx = movies.findIndex(m => m.imdbId === skeletonId);
@@ -483,6 +484,7 @@
         const url = `/api/movies/ratings?imdb=${encodeURIComponent(imdbId)}` +
                     `&title=${encodeURIComponent(old.meta.title || '')}` +
                     `&year=${encodeURIComponent(old.meta.year || '')}` +
+                    `&type=${encodeURIComponent(old.meta.type || '')}` +
                     `&fresh=1&t=${Date.now()}`;
         const res = await fetch(url, { cache: 'no-store' });
         const data = await res.json();
@@ -584,6 +586,8 @@
       }).join('');
 
       const chips = [];
+      if (/tvMiniSeries/i.test(meta.type || '')) chips.push(`<span class="chip">📺 ${lang === 'es' ? 'Miniserie' : 'Miniseries'}</span>`);
+      else if (/tvSeries/i.test(meta.type || '')) chips.push(`<span class="chip">📺 ${lang === 'es' ? 'Serie' : 'Series'}</span>`);
       (meta.genres || []).slice(0, 3).forEach(g => chips.push(`<span class="chip g">${esc(g)}</span>`));
       if (meta.runtime) chips.push(`<span class="chip">⏱ ${meta.runtime} ${t('min')}</span>`);
       if (meta.contentRating) chips.push(`<span class="chip">${esc(meta.contentRating)}</span>`);
