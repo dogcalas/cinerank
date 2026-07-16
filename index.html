@@ -129,6 +129,12 @@
     .btn.on { color: var(--text); border-color: var(--accent); background: var(--accent-glow); }
     .btn-danger:hover { border-color: var(--bad); color: #fca5a5; }
 
+    /* ---------- genre filter ---------- */
+    .genre-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: -0.25rem 0 1.25rem; }
+    .genre-bar .chip { cursor: pointer; transition: all 0.2s; user-select: none; }
+    .genre-bar .chip:hover { border-color: var(--accent); color: var(--text); }
+    .genre-bar .chip.on { color: #c4b5fd; border-color: rgba(139,92,246,0.55); background: rgba(139,92,246,0.14); }
+
     /* ---------- winner banner ---------- */
     .winner {
       display: none; align-items: center; gap: 1rem; flex-wrap: wrap;
@@ -150,8 +156,12 @@
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
     .card.best { border-color: rgba(34,197,94,0.4); box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 12px 40px rgba(0,0,0,0.35); }
     .card .best-tag { position: absolute; top: 10px; left: 10px; z-index: 3; background: var(--good); color: #05130a; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; letter-spacing: 0.05em; }
-    .card .rm { position: absolute; top: 10px; right: 10px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s; }
+    .card .rm, .card .rf { position: absolute; top: 10px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s; }
+    .card .rm { right: 10px; }
     .card .rm:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
+    .card .rf { right: 44px; font-size: 0.9rem; }
+    .card .rf:hover { background: var(--accent-glow); color: var(--text); border-color: var(--accent); }
+    .card .rf.spinning { animation: rot 0.8s linear infinite; pointer-events: none; }
 
     .poster-wrap { position: relative; aspect-ratio: 16/9; overflow: hidden; background: #14141c; }
     /* Los pósters son verticales: capa de fondo difuminada a sangre + póster
@@ -259,10 +269,13 @@
       <span class="count" id="count"></span>
       <div class="actions">
         <button class="btn" id="sortBtn" data-i18n="sort">↑ Ordenar por media</button>
+        <button class="btn" id="sortTimeBtn" data-i18n="sortTime">⏱ Ordenar por duración</button>
         <button class="btn" id="viewBtn" data-i18n="view">▤ Tabla</button>
         <button class="btn btn-danger" id="clearBtn" data-i18n="clear">Vaciar todo</button>
       </div>
     </div>
+
+    <div class="genre-bar" id="genreBar" style="display:none"></div>
 
     <div class="winner" id="winner">
       <span class="medal">🏆</span>
@@ -303,6 +316,7 @@
                en: 'Type a title and gather its scores from IMDb, Rotten Tomatoes, FilmAffinity and Metacritic with an aggregate average. Add several to compare them side by side.' },
       ph:    { es: 'Busca una película… p. ej. Inception', en: 'Search a movie… e.g. Inception' },
       sort:  { es: '↑ Ordenar por media', en: '↑ Sort by average' },
+      sortTime: { es: '⏱ Ordenar por duración', en: '⏱ Sort by runtime' },
       view:  { es: '▤ Tabla', en: '▤ Table' },
       viewCards: { es: '▦ Tarjetas', en: '▦ Cards' },
       clear: { es: 'Vaciar todo', en: 'Clear all' },
@@ -316,6 +330,8 @@
       count: { es: (n) => `${n} película${n === 1 ? '' : 's'} en comparación`, en: (n) => `${n} movie${n === 1 ? '' : 's'} compared` },
       na: { es: 'N/D', en: 'N/A' },
       already: { es: 'Ya está en la comparación', en: 'Already in the comparison' },
+      refresh: { es: 'Recalcular notas', en: 'Refresh ratings' },
+      refreshFail: { es: 'No se pudo recalcular; se mantienen las notas anteriores', en: 'Could not refresh; keeping previous ratings' },
       plotToggle: { es: 'Sinopsis', en: 'Synopsis' },
       min: { es: 'min', en: 'min' },
       sources: { es: (n) => `${n} fuente${n === 1 ? '' : 's'}`, en: (n) => `${n} source${n === 1 ? '' : 's'}` },
@@ -336,7 +352,8 @@
 
     // ---------- state ----------
     let movies = load();              // [{imdbId, meta, ratings, average, sourceCount}]
-    let sortByAvg = false;
+    let sortMode = 'none';            // 'none' | 'avg' | 'runtime'
+    let genreSel = new Set();         // géneros activos del filtro
     let tableMode = false;
 
     const $ = (id) => document.getElementById(id);
@@ -455,13 +472,48 @@
 
     function remove(imdbId) { movies = movies.filter(m => m.imdbId !== imdbId); save(); render(); }
 
+    // Recalcula las notas de una película saltando todas las cachés
+    // (los rankings cambian con el tiempo).
+    async function refreshMovie(imdbId, btn) {
+      const idx = movies.findIndex(m => m.imdbId === imdbId);
+      if (idx < 0) return;
+      const old = movies[idx];
+      if (btn) btn.classList.add('spinning');
+      try {
+        const url = `/api/movies/ratings?imdb=${encodeURIComponent(imdbId)}` +
+                    `&title=${encodeURIComponent(old.meta.title || '')}` +
+                    `&year=${encodeURIComponent(old.meta.year || '')}` +
+                    `&fresh=1&t=${Date.now()}`;
+        const res = await fetch(url, { cache: 'no-store' });
+        const data = await res.json();
+        if (data.error || !data.ratings) { flash(data.error || t('refreshFail')); return; }
+        const filled = Object.fromEntries(Object.entries(data.meta || {}).filter(
+          ([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)));
+        data.meta = { ...old.meta, ...filled };
+        const i2 = movies.findIndex(m => m.imdbId === imdbId);
+        if (i2 >= 0) movies[i2] = data;
+        save(); render();
+      } catch {
+        flash(t('refreshFail'));
+        if (btn) btn.classList.remove('spinning');
+      }
+    }
+
     // ---------- rendering ----------
     function scoreColor(n) { return n >= 7 ? 'var(--good)' : n >= 5 ? 'var(--mid)' : 'var(--bad)'; }
 
     function orderedMovies() {
       const list = [...movies];
-      if (sortByAvg) list.sort((a, b) => (b.average ?? -1) - (a.average ?? -1));
+      if (sortMode === 'avg') list.sort((a, b) => (b.average ?? -1) - (a.average ?? -1));
+      else if (sortMode === 'runtime')
+        list.sort((a, b) => ((a.meta && a.meta.runtime) ?? Infinity) - ((b.meta && b.meta.runtime) ?? Infinity));
       return list;
+    }
+    // Películas visibles tras el filtro de géneros (si no hay géneros activos, todas).
+    function visibleMovies() {
+      const list = orderedMovies();
+      if (!genreSel.size) return list;
+      return list.filter(m => (m.meta.genres || []).some(g => genreSel.has(g)));
     }
     function bestId() {
       const rated = movies.filter(m => m.average != null);
@@ -469,21 +521,39 @@
       return rated.reduce((a, b) => (b.average > a.average ? b : a)).imdbId;
     }
 
+    function renderGenreBar() {
+      const bar = $('genreBar');
+      const all = [...new Set(movies.flatMap(m => (m.meta && m.meta.genres) || []))].sort();
+      genreSel = new Set([...genreSel].filter(g => all.includes(g)));
+      if (all.length < 2) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+      bar.style.display = 'flex';
+      bar.innerHTML = all.map(g =>
+        `<span class="chip ${genreSel.has(g) ? 'on' : ''}" data-g="${esc(g)}">${esc(g)}</span>`).join('');
+      bar.querySelectorAll('[data-g]').forEach(ch => ch.addEventListener('click', () => {
+        const g = ch.dataset.g;
+        genreSel.has(g) ? genreSel.delete(g) : genreSel.add(g);
+        render();
+      }));
+    }
+
     function render() {
       const has = movies.length > 0;
       empty.style.display = has ? 'none' : 'block';
       toolbar.style.display = has ? 'flex' : 'none';
-      $('count').textContent = t('count', movies.length);
+      renderGenreBar();
+      const shown = visibleMovies();
+      $('count').textContent = t('count', shown.length);
 
       const best = bestId();
       const bm = movies.find(m => m.imdbId === best);
       winner.classList.toggle('show', !!(bm && movies.length > 1 && bm.average != null));
       if (bm) $('winnerName').textContent = `${bm.meta.title}${bm.meta.year ? ' (' + bm.meta.year + ')' : ''} — ${fmt(bm.average)}/10`;
 
-      if (tableMode && has) { grid.style.display = 'none'; tableView.classList.add('show'); renderTable(best); return; }
+      if (tableMode && has) { grid.style.display = 'none'; tableView.classList.add('show'); renderTable(best, shown); return; }
       tableView.classList.remove('show'); grid.style.display = 'grid';
-      grid.innerHTML = orderedMovies().map(m => card(m, best)).join('');
+      grid.innerHTML = shown.map(m => card(m, best)).join('');
       grid.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => remove(b.dataset.rm)));
+      grid.querySelectorAll('[data-rf]').forEach(b => b.addEventListener('click', () => refreshMovie(b.dataset.rf, b)));
     }
 
     function card(m, best) {
@@ -524,6 +594,7 @@
       return `
         <div class="card ${isBest ? 'best' : ''}">
           ${isBest ? `<span class="best-tag">🏆 ${t('winner')}</span>` : ''}
+          <button class="rf" data-rf="${m.imdbId}" title="${t('refresh')}">↻</button>
           <button class="rm" data-rm="${m.imdbId}" title="Quitar">✕</button>
           <div class="poster-wrap">
             ${meta.poster ? `<img class="bg" src="${meta.poster}" alt="" aria-hidden="true"><img class="fg" src="${meta.poster}" alt="${esc(meta.title || '')}">` : '<div class="noimg">🎬</div>'}
@@ -544,8 +615,8 @@
         </div>`;
     }
 
-    function renderTable(best) {
-      const rows = orderedMovies().map(m => {
+    function renderTable(best, shown) {
+      const rows = (shown || visibleMovies()).map(m => {
         const map = {}; (m.ratings || []).forEach(r => { map[r.key] = r; });
         const cells = SRC_ORDER.map(k => `<td>${map[k] ? map[k].native : `<span style="color:var(--text-dim)">${t('na')}</span>`}</td>`).join('');
         const isBest = m.imdbId === best && movies.length > 1;
@@ -566,7 +637,14 @@
     }
 
     // ---------- toolbar actions ----------
-    $('sortBtn').addEventListener('click', () => { sortByAvg = !sortByAvg; $('sortBtn').classList.toggle('on', sortByAvg); render(); });
+    function setSort(mode) {
+      sortMode = sortMode === mode ? 'none' : mode;
+      $('sortBtn').classList.toggle('on', sortMode === 'avg');
+      $('sortTimeBtn').classList.toggle('on', sortMode === 'runtime');
+      render();
+    }
+    $('sortBtn').addEventListener('click', () => setSort('avg'));
+    $('sortTimeBtn').addEventListener('click', () => setSort('runtime'));
     $('viewBtn').addEventListener('click', () => { tableMode = !tableMode; $('viewBtn').innerHTML = tableMode ? I18N.viewCards[lang] : I18N.view[lang]; $('viewBtn').classList.toggle('on', tableMode); render(); });
     $('clearBtn').addEventListener('click', () => { if (movies.length && confirm(lang === 'es' ? '¿Vaciar la comparación?' : 'Clear the comparison?')) { movies = []; save(); render(); } });
 

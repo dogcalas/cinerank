@@ -22,20 +22,23 @@ export const json = (data, status = 200, extraHeaders = {}) =>
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=21600', // 6h — ratings move slowly
+      'Cache-Control': 'public, max-age=1800', // 30 min en el navegador; el botón ↻ la salta
       ...extraHeaders,
     },
   });
 
-// fetch with a hard timeout so one slow source can't hang the whole request
-async function fetchText(url, { timeout = 9000, headers = {} } = {}) {
+// fetch with a hard timeout so one slow source can't hang the whole request.
+// `fresh: true` (botón "recalcular") salta la caché edge de las páginas fuente.
+async function fetchText(url, { timeout = 9000, headers = {}, fresh = false } = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeout);
   try {
     const res = await fetch(url, {
       headers: { ...BROWSER_HEADERS, ...headers },
       signal: ctrl.signal,
-      cf: { cacheTtl: 21600, cacheEverything: true },
+      cf: fresh
+        ? { cacheTtl: 0, cacheEverything: false }
+        : { cacheTtl: 21600, cacheEverything: true },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
@@ -157,12 +160,13 @@ export async function searchImdb(query) {
 // IMDb: scrape the title page JSON-LD (rating + rich metadata). No key.
 // IMDb suele responder 202 con una página-challenge anti-bot a fetch plano;
 // en ese caso reintenta vía Browser Rendering si hay credenciales.
-async function fromImdb(imdbId, env) {
+async function fromImdb(imdbId, env, fresh) {
   const pageUrl = `https://www.imdb.com/title/${imdbId}/`;
   let html = '';
   try {
     html = await fetchText(pageUrl, {
       headers: { 'Accept-Language': 'en-US,en;q=0.9' },
+      fresh,
     });
   } catch (_) {
     /* fall through to browser rendering */
@@ -211,10 +215,10 @@ async function fromImdb(imdbId, env) {
 // search page still works without a key: each result is a
 // <search-page-media-row> with release-year + tomatometer-score attributes.
 // The film page then carries both scores in a <script id="media-scorecard-json">.
-async function fromRottenTomatoes(title, year) {
+async function fromRottenTomatoes(title, year, fresh) {
   const searchHtml = await fetchText(
     `https://www.rottentomatoes.com/search?search=${encodeURIComponent(title)}`,
-    { timeout: 9000 }
+    { timeout: 9000, fresh }
   );
   const rows = [...searchHtml.matchAll(
     /<search-page-media-row([\s\S]*?)<\/search-page-media-row>/g
@@ -251,7 +255,7 @@ async function fromRottenTomatoes(title, year) {
   let audience = null;
   const rtUrl = best.href;
   try {
-    const filmHtml = await fetchText(rtUrl, { timeout: 9000 });
+    const filmHtml = await fetchText(rtUrl, { timeout: 9000, fresh });
     const m = filmHtml.match(
       /<script[^>]*id="media-scorecard-json"[^>]*>([\s\S]*?)<\/script>/
     );
@@ -295,10 +299,10 @@ async function fromRottenTomatoes(title, year) {
 // Filmaffinity: no API — scrape the search page, then the film page's rating.
 // FilmAffinity devuelve 403 a fetch plano desde datacenter; cada página se
 // reintenta vía Browser Rendering cuando hay credenciales.
-async function fromFilmaffinity(title, year, env) {
+async function fromFilmaffinity(title, year, env, fresh) {
   const getHtml = async (url) => {
     try {
-      return await fetchText(url, { timeout: 9000 });
+      return await fetchText(url, { timeout: 9000, fresh });
     } catch (e) {
       const rendered = await renderViaCf(url, env);
       if (rendered) return rendered;
@@ -346,10 +350,10 @@ async function fromFilmaffinity(title, year, env) {
 }
 
 // OMDb (optional API key): reliable IMDb + RT + Metacritic + solid metadata.
-async function fromOmdb(imdbId, apiKey) {
+async function fromOmdb(imdbId, apiKey, fresh) {
   const data = await fetchJson(
     `https://www.omdbapi.com/?apikey=${apiKey}&i=${imdbId}&plot=short`,
-    { timeout: 8000 }
+    { timeout: 8000, fresh }
   );
   if (!data || data.Response === 'False') return null;
   const recs = [];
@@ -418,11 +422,11 @@ async function fromOmdb(imdbId, apiKey) {
 }
 
 // TMDb (optional API key): adds the TMDb community score + metadata backup.
-async function fromTmdb(imdbId, apiKey) {
+async function fromTmdb(imdbId, apiKey, fresh) {
   const data = await fetchJson(
     `https://api.themoviedb.org/3/find/${imdbId}` +
       `?external_source=imdb_id&api_key=${apiKey}&language=es-ES`,
-    { timeout: 8000 }
+    { timeout: 8000, fresh }
   );
   const hit = (data.movie_results && data.movie_results[0]) ||
     (data.tv_results && data.tv_results[0]);
@@ -468,7 +472,7 @@ function mergeMeta(base, incoming) {
   return out;
 }
 
-export async function aggregate({ imdbId, title, year, env }) {
+export async function aggregate({ imdbId, title, year, env, fresh = false }) {
   const meta = {
     title: title || null,
     year: year || null,
@@ -485,25 +489,25 @@ export async function aggregate({ imdbId, title, year, env }) {
 
   // Kick off every source in parallel; settle so one failure can't sink the rest.
   const tasks = [
-    fromImdb(imdbId, env)
+    fromImdb(imdbId, env, fresh)
       .then((r) => {
         if (r.rec) ratings.push(r.rec);
         Object.assign(meta, mergeMeta(meta, r.meta));
       })
       .catch((e) => errors.push({ source: 'IMDb', error: String(e) })),
 
-    fromFilmaffinity(title, year, env)
+    fromFilmaffinity(title, year, env, fresh)
       .then((r) => r && ratings.push(r))
       .catch((e) => errors.push({ source: 'FilmAffinity', error: String(e) })),
 
-    fromRottenTomatoes(title, year)
+    fromRottenTomatoes(title, year, fresh)
       .then((r) => r && r.forEach((x) => ratings.push(x)))
       .catch((e) => errors.push({ source: 'Rotten Tomatoes', error: String(e) })),
   ];
 
   if (env && env.OMDB_API_KEY) {
     tasks.push(
-      fromOmdb(imdbId, env.OMDB_API_KEY)
+      fromOmdb(imdbId, env.OMDB_API_KEY, fresh)
         .then((r) => {
           if (r) {
             r.recs.forEach((x) => ratings.push(x));
@@ -515,7 +519,7 @@ export async function aggregate({ imdbId, title, year, env }) {
   }
   if (env && env.TMDB_API_KEY) {
     tasks.push(
-      fromTmdb(imdbId, env.TMDB_API_KEY)
+      fromTmdb(imdbId, env.TMDB_API_KEY, fresh)
         .then((r) => {
           if (r) {
             if (r.rec) ratings.push(r.rec);
