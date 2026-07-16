@@ -320,7 +320,7 @@ async function fromRottenTomatoes(title, year, fresh) {
 // 200 cuyo HTML no trae la ficha. Por eso el flujo completo se intenta
 // primero con fetch directo y, si no produce nota, se repite entero con
 // Browser Rendering (navegador real de Cloudflare).
-async function fromFilmaffinity(title, year, env, fresh) {
+async function fromFilmaffinity(imdbId, title, year, env, fresh) {
   const searchUrl =
     `https://www.filmaffinity.com/es/search.php?stext=` +
     encodeURIComponent(title);
@@ -367,16 +367,83 @@ async function fromFilmaffinity(title, year, env, fresh) {
     const direct = await attempt((u) => fetchText(u, { timeout: 9000, fresh }));
     if (direct) return direct;
   } catch (_) {
-    /* bloqueado: reintenta con navegador real */
+    /* bloqueado: siguiente vía */
   }
-  // Si tampoco hay credenciales CF_*, esto lanza un error descriptivo que
-  // aparece en el array errors de la respuesta.
+  // FA bloquea datacenter con el challenge de Cloudflare, que tampoco deja
+  // pasar al navegador de Browser Rendering. Vía archivada: Wikidata mapea
+  // imdbId → id de FilmAffinity y Wayback tiene la ficha archivada (la nota
+  // puede llevar unos días de retraso, pero se mueve muy despacio).
+  try {
+    const archived = await filmaffinityViaArchive(imdbId, fresh);
+    if (archived) return archived;
+  } catch (_) {
+    /* sin copia archivada: último intento con navegador real */
+  }
   const viaBrowser = await attempt((u) => renderViaCf(u, env));
   if (!viaBrowser)
     throw new Error(
-      'sin ficha ni nota tras Browser Rendering (¿bloqueo o película sin votos?)'
+      'directo bloqueado, sin copia en Wayback y Browser Rendering no superó el challenge'
     );
   return viaBrowser;
+}
+
+// Nota de FilmAffinity sin tocar filmaffinity.com: Wikidata (P345 imdbId →
+// P480 id de FA) + snapshot de Wayback Machine. Ambas APIs son abiertas y no
+// bloquean IPs de datacenter.
+async function filmaffinityViaArchive(imdbId, fresh) {
+  if (!imdbId) return null;
+  const sparql =
+    `SELECT ?fa WHERE { ?item wdt:P345 "${imdbId}". ?item wdt:P480 ?fa. } LIMIT 1`;
+  const wd = await fetchJson(
+    `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`,
+    {
+      timeout: 8000,
+      fresh,
+      headers: {
+        'User-Agent': 'CineRank/1.0 (https://github.com/dogcalas/cinerank)',
+        Accept: 'application/sparql-results+json',
+      },
+    }
+  );
+  const binding = wd.results && wd.results.bindings && wd.results.bindings[0];
+  const faId = binding && binding.fa && binding.fa.value;
+  if (!faId || !/^\d+$/.test(faId)) return null;
+
+  const avail = await fetchJson(
+    `https://archive.org/wayback/available?url=${encodeURIComponent(
+      `filmaffinity.com/es/film${faId}.html`
+    )}`,
+    { timeout: 8000, fresh }
+  );
+  const snap = avail.archived_snapshots && avail.archived_snapshots.closest;
+  if (!snap || !snap.available || !snap.url) return null;
+
+  const html = await fetchText(snap.url.replace(/^http:/, 'https:'), {
+    timeout: 15000,
+    fresh,
+  });
+  let value = null;
+  const ld = firstJsonLd(html);
+  if (ld && ld.aggregateRating && ld.aggregateRating.ratingValue != null) {
+    value = parseFloat(String(ld.aggregateRating.ratingValue).replace(',', '.'));
+  }
+  if (value == null) {
+    const m =
+      html.match(/itemprop=["']ratingValue["'][^>]*content=["']([\d.,]+)["']/) ||
+      html.match(/id=["']movie-rat-avg["'][^>]*>\s*([\d.,]+)/);
+    if (m) value = parseFloat(m[1].replace(',', '.'));
+  }
+  if (value == null || Number.isNaN(value)) return null;
+
+  return {
+    source: 'FilmAffinity',
+    key: 'filmaffinity',
+    prio: 2, // por detrás del scraping directo si ambos llegaran
+    native: `${value.toFixed(1)}/10`,
+    value,
+    scale: 10,
+    url: `https://www.filmaffinity.com/es/film${faId}.html`,
+  };
 }
 
 // OMDb (optional API key): reliable IMDb + RT + Metacritic + solid metadata.
@@ -526,7 +593,7 @@ export async function aggregate({ imdbId, title, year, env, fresh = false }) {
       })
       .catch((e) => errors.push({ source: 'IMDb', error: String(e) })),
 
-    fromFilmaffinity(title, year, env, fresh)
+    fromFilmaffinity(imdbId, title, year, env, fresh)
       .then((r) => r && ratings.push(r))
       .catch((e) => errors.push({ source: 'FilmAffinity', error: String(e) })),
 
