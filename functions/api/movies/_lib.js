@@ -203,11 +203,15 @@ async function fromImdb(imdbId, env, fresh) {
     try {
       const rendered = await renderViaCf(pageUrl, env);
       ld = firstJsonLd(rendered);
+      if (ld) html = rendered;
     } catch (_) {
       /* sin rating de IMDb directo; queda el respaldo de OMDb */
     }
   }
   ld = ld || {};
+  // Popularidad IMDb (ranking del "meter"), embebida en el JSON de la página.
+  const rankM = html.match(/"meterRanking":\s*\{\s*"currentRank":\s*(\d+)/);
+  const popularity = rankM ? Number(rankM[1]) : null;
   const agg = ld.aggregateRating;
   const rating = agg ? parseFloat(agg.ratingValue) : null;
   const meta = {
@@ -225,6 +229,7 @@ async function fromImdb(imdbId, env, fresh) {
           .map((d) => d.name)
           .filter(Boolean)
       : [],
+    popularity,
   };
   const rec =
     rating != null && !Number.isNaN(rating)

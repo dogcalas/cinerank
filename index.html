@@ -190,15 +190,22 @@
     .chip { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); background: var(--bg-glass); border: 1px solid var(--border); padding: 0.2rem 0.55rem; border-radius: 50px; }
     .chip.g { color: #c4b5fd; border-color: rgba(139,92,246,0.3); }
 
-    .ratings { display: flex; flex-direction: column; gap: 0.6rem; }
-    .rrow { display: flex; align-items: center; gap: 0.6rem; }
-    .rrow .src { width: 104px; flex-shrink: 0; font-size: 0.78rem; display: flex; align-items: center; gap: 0.35rem; }
-    .rrow .src .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .rrow .bar { flex: 1; height: 7px; background: rgba(255,255,255,0.06); border-radius: 50px; overflow: hidden; }
-    .rrow .bar i { display: block; height: 100%; border-radius: 50px; transition: width 0.6s ease; }
-    .rrow .val { width: 58px; text-align: right; font-family: var(--mono); font-size: 0.78rem; font-weight: 500; flex-shrink: 0; }
-    .rrow.na .val { color: var(--text-dim); }
-    .rrow.na .src { color: var(--text-dim); }
+    /* Stats compactas: rejilla de 2 por fila en vez de barras a lo ancho. */
+    .ratings { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .stat {
+      display: flex; flex-direction: column; gap: 1px;
+      background: var(--bg-glass); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.45rem 0.6rem; min-width: 0;
+    }
+    .stat .src { font-family: var(--mono); font-size: 0.62rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stat .src .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .stat .val { font-family: var(--mono); font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
+    a.stat { transition: border-color 0.2s; }
+    a.stat:hover { border-color: var(--accent); }
+    .stat .meter { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.06); margin-top: 4px; overflow: hidden; }
+    .stat .meter i { display: block; height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+    .stat.na { opacity: 0.45; }
+    .stat.na .val { color: var(--text-dim); font-weight: 400; }
 
     .plot { margin-top: 1rem; font-size: 0.86rem; color: var(--text-muted); }
     .plot summary { cursor: pointer; font-family: var(--mono); font-size: 0.72rem; color: var(--accent); list-style: none; }
@@ -233,7 +240,6 @@
     .disclaimer { max-width: 640px; margin: 0 auto 1rem; line-height: 1.7; }
 
     @media (max-width: 560px) {
-      .rrow .src { width: 88px; font-size: 0.72rem; }
       .grid { grid-template-columns: 1fr; }
     }
   </style>
@@ -565,7 +571,7 @@
             <div class="overlay"><div class="title">${esc(m.meta.title || '')}</div></div>
           </div>
           <div class="card-body"><div class="chips"><span class="chip">${t('loading')}</span></div>
-            <div class="ratings">${SRC_ORDER.map(() => `<div class="rrow na"><div class="src"><span class="dot"></span>···</div><div class="bar"></div><div class="val">···</div></div>`).join('')}</div>
+            <div class="ratings">${SRC_ORDER.map(() => `<div class="stat na"><div class="src"><span class="dot"></span>···</div><div class="val">···</div><div class="meter"></div></div>`).join('')}</div>
           </div>
         </div>`;
 
@@ -576,13 +582,14 @@
         const r = map[key];
         const label = SRC_LABEL[key];
         const color = SRC_COLORS[key];
-        if (!r) return `<div class="rrow na"><div class="src"><span class="dot" style="background:${color};opacity:.35"></span>${label}</div><div class="bar"></div><div class="val">${t('na')}</div></div>`;
+        if (!r) return `<div class="stat na"><div class="src"><span class="dot" style="background:${color}"></span>${label}</div><div class="val">${t('na')}</div><div class="meter"></div></div>`;
         const pct = Math.max(3, Math.min(100, r.normalized * 10));
-        return `<div class="rrow">
-            <div class="src"><span class="dot" style="background:${color}"></span>${label}</div>
-            <div class="bar"><i style="width:${pct}%;background:${color}"></i></div>
-            ${r.url ? `<a class="val" href="${r.url}" target="_blank" rel="noopener" style="color:inherit">${r.native}</a>` : `<div class="val">${r.native}</div>`}
-          </div>`;
+        const inner = `<div class="src"><span class="dot" style="background:${color}"></span>${label}</div>
+            <div class="val">${r.native}</div>
+            <div class="meter"><i style="width:${pct}%;background:${color}"></i></div>`;
+        return r.url
+          ? `<a class="stat" href="${r.url}" target="_blank" rel="noopener">${inner}</a>`
+          : `<div class="stat">${inner}</div>`;
       }).join('');
 
       const chips = [];
@@ -590,6 +597,7 @@
       else if (/tvSeries/i.test(meta.type || '')) chips.push(`<span class="chip">📺 ${lang === 'es' ? 'Serie' : 'Series'}</span>`);
       (meta.genres || []).slice(0, 3).forEach(g => chips.push(`<span class="chip g">${esc(g)}</span>`));
       if (meta.runtime) chips.push(`<span class="chip">⏱ ${meta.runtime} ${t('min')}</span>`);
+      if (meta.popularity) chips.push(`<span class="chip" title="${lang === 'es' ? 'Popularidad en IMDb' : 'IMDb popularity'}">🔥 #${meta.popularity} IMDb</span>`);
       if (meta.contentRating) chips.push(`<span class="chip">${esc(meta.contentRating)}</span>`);
       if (meta.director && meta.director.length) chips.push(`<span class="chip">🎬 ${esc(meta.director.slice(0, 2).join(', '))}</span>`);
       if (meta.country) chips.push(`<span class="chip">${esc(meta.country.split(',')[0])}</span>`);

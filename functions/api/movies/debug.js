@@ -3,7 +3,7 @@
 // cuando termine la depuración.
 import { renderViaCf, fetchDebug, json } from './_lib.js';
 
-const ALLOWED = /^https:\/\/(www\.filmaffinity\.com|query\.wikidata\.org|archive\.org|web\.archive\.org)\//;
+const ALLOWED = /^https:\/\/(www\.filmaffinity\.com|www\.imdb\.com|query\.wikidata\.org|archive\.org|web\.archive\.org)\//;
 
 export async function onRequestGet({ request, env }) {
   const p = new URL(request.url).searchParams;
