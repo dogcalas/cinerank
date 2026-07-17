@@ -51,17 +51,6 @@ async function fetchJson(url, opts) {
   return JSON.parse(await fetchText(url, opts));
 }
 
-// TEMPORAL: usado por el endpoint de depuración.
-export function fetchDebug(url) {
-  return fetchText(url, {
-    timeout: 15000,
-    fresh: true,
-    headers: {
-      'User-Agent': 'CineRank/1.0 (https://github.com/dogcalas/cinerank)',
-      Accept: 'application/sparql-results+json, application/json, text/html;q=0.9',
-    },
-  });
-}
 
 // Cloudflare Browser Rendering (REST): renders the page in a real headless
 // browser and returns its HTML. Bypasses the anti-bot walls that block plain
@@ -198,17 +187,10 @@ async function fromImdb(imdbId, env, fresh) {
   } catch (_) {
     /* fall through to browser rendering */
   }
-  let ld = firstJsonLd(html);
-  if (!ld) {
-    try {
-      const rendered = await renderViaCf(pageUrl, env);
-      ld = firstJsonLd(rendered);
-      if (ld) html = rendered;
-    } catch (_) {
-      /* sin rating de IMDb directo; queda el respaldo de OMDb */
-    }
-  }
-  ld = ld || {};
+  // IMDb sirve un challenge de AWS WAF a los datacenters que ni Browser
+  // Rendering supera (comprobado): si no hay JSON-LD, el rating sale del
+  // respaldo de OMDb y la popularidad del de TMDb.
+  const ld = firstJsonLd(html) || {};
   // Popularidad IMDb (ranking del "meter"), embebida en el JSON de la página.
   const rankM = html.match(/"meterRanking":\s*\{\s*"currentRank":\s*(\d+)/);
   const popularity = rankM ? Number(rankM[1]) : null;
@@ -572,6 +554,8 @@ async function fromTmdb(imdbId, apiKey, fresh) {
     poster: hit.poster_path
       ? `https://image.tmdb.org/t/p/w500${hit.poster_path}`
       : null,
+    // Popularidad TMDb: sin escala absoluta, pero comparable entre títulos.
+    popularityTmdb: hit.popularity ? Math.round(hit.popularity) : null,
   };
   return { rec, meta };
 }

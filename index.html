@@ -632,6 +632,7 @@
       else if (/tvSeries/i.test(meta.type || '')) chips.push(`<span class="chip">📺 ${lang === 'es' ? 'Serie' : 'Series'}</span>`);
       (meta.genres || []).forEach(g => chips.push(`<span class="chip g">${esc(g)}</span>`));
       if (meta.popularity) chips.push(`<span class="chip" title="${lang === 'es' ? 'Popularidad en IMDb' : 'IMDb popularity'}">🔥 #${meta.popularity} IMDb</span>`);
+      else if (meta.popularityTmdb) chips.push(`<span class="chip" title="${lang === 'es' ? 'Popularidad en TMDb (comparable entre títulos)' : 'TMDb popularity (comparable across titles)'}">🔥 ${meta.popularityTmdb} TMDb</span>`);
 
       const avg = m.average;
       return `
