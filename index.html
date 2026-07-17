@@ -127,7 +127,10 @@
     }
     .btn:hover { color: var(--text); border-color: var(--accent); }
     .btn.on { color: var(--text); border-color: var(--accent); background: var(--accent-glow); }
+    .btn:disabled { opacity: 0.5; cursor: default; }
     .btn-danger:hover { border-color: var(--bad); color: #fca5a5; }
+    .top-btns { display: flex; gap: 0.6rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+    .top-btns .btn { font-size: 0.8rem; padding: 0.55rem 1rem; }
 
     /* ---------- genre filter ---------- */
     .genre-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: -0.25rem 0 1.25rem; }
@@ -279,6 +282,11 @@
         <span class="spin"><span class="spinner"></span></span>
         <div class="suggest" id="suggest"></div>
       </div>
+
+      <div class="top-btns">
+        <button class="btn" id="topMoviesBtn" data-i18n="topMovies">🎬 Top 5 películas de hoy</button>
+        <button class="btn" id="topSeriesBtn" data-i18n="topSeries">📺 Top 5 series de hoy</button>
+      </div>
     </section>
 
     <div class="toolbar" id="toolbar" style="display:none">
@@ -347,6 +355,9 @@
       na: { es: 'N/D', en: 'N/A' },
       already: { es: 'Ya está en la comparación', en: 'Already in the comparison' },
       refresh: { es: 'Recalcular notas', en: 'Refresh ratings' },
+      topMovies: { es: '🎬 Top 5 películas de hoy', en: '🎬 Today’s top 5 movies' },
+      topSeries: { es: '📺 Top 5 series de hoy', en: '📺 Today’s top 5 shows' },
+      topLoading: { es: 'Buscando el top de hoy…', en: 'Fetching today’s top…' },
       refreshFail: { es: 'No se pudo recalcular; se mantienen las notas anteriores', en: 'Could not refresh; keeping previous ratings' },
       plotToggle: { es: 'Sinopsis', en: 'Synopsis' },
       min: { es: 'min', en: 'min' },
@@ -502,6 +513,26 @@
     }
 
     function remove(imdbId) { movies = movies.filter(m => m.imdbId !== imdbId); save(); render(); }
+
+    // Añade a la comparación el top 5 del día (tendencias de TMDb).
+    async function addTop(kind, btn) {
+      btn.disabled = true;
+      flash(t('topLoading'));
+      try {
+        const res = await fetch(`/api/movies/top?kind=${kind}`);
+        const data = await res.json();
+        if (data.error || !data.results) { flash(data.error || t('noResults')); return; }
+        const nuevos = data.results.filter(r => !movies.some(m => m.imdbId === r.imdbId));
+        if (!nuevos.length) { flash(t('already')); return; }
+        await Promise.all(nuevos.map(r => pick(r)));
+      } catch (e) {
+        flash(String(e));
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    $('topMoviesBtn').addEventListener('click', () => addTop('movie', $('topMoviesBtn')));
+    $('topSeriesBtn').addEventListener('click', () => addTop('tv', $('topSeriesBtn')));
 
     // Recalcula las notas de una película saltando todas las cachés
     // (los rankings cambian con el tiempo).
