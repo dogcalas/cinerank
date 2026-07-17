@@ -185,7 +185,7 @@
     .card {
       background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px;
       overflow: hidden; position: relative; animation: rise 0.35s ease both;
-      display: flex; flex-direction: column; height: 650px;
+      display: flex; flex-direction: column; height: 585px;
     }
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
     .card.best { border-color: rgba(34,197,94,0.4); box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 12px 40px rgba(0,0,0,0.35); }
@@ -219,6 +219,7 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     }
     .avg-badge .n { font-family: var(--mono); font-weight: 600; font-size: 1.25rem; line-height: 1; }
+    .avg-badge .n small { font-size: 0.55em; font-weight: 500; color: var(--text-muted); }
     .avg-badge .l { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
     .card-body {
@@ -798,7 +799,7 @@
           </div>
           <div class="card-body">
             <div class="avg-badge" style="border-color:${avg != null ? scoreColor(avg) : 'var(--border)'}">
-              <span class="n" style="color:${avg != null ? scoreColor(avg) : 'var(--text-dim)'}">${avg != null ? fmt(avg) : '—'}</span>
+              <span class="n" style="color:${avg != null ? scoreColor(avg) : 'var(--text-dim)'}">${avg != null ? `${fmt(avg)}<small>/10</small>` : '—'}</span>
               <span class="l">${t('sources', m.sourceCount || 0)}</span>
             </div>
             ${metaLine}
