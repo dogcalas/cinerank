@@ -3,12 +3,20 @@
 // directamente en la comparación. Requiere TMDB_API_KEY.
 import { json } from './_lib.js';
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet(context) {
+  const { request, env } = context;
   const kind =
     new URL(request.url).searchParams.get('kind') === 'tv' ? 'tv' : 'movie';
   if (!env.TMDB_API_KEY) {
     return json({ error: 'Falta TMDB_API_KEY para los tops del día.' }, 501);
   }
+  // Caché edge compartida: una sola llamada a TMDb por hora y tipo.
+  const cacheKey = new Request(
+    `${new URL(request.url).origin}/api/movies/top?kind=${kind}`
+  );
+  const cache = caches.default;
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
   try {
     const trending = await (
       await fetch(
@@ -49,9 +57,11 @@ export async function onRequestGet({ request, env }) {
           : null,
       }));
 
-    return json({ kind, results }, 200, {
+    const res = json({ kind, results }, 200, {
       'Cache-Control': 'public, max-age=3600', // el top cambia a diario
     });
+    context.waitUntil(cache.put(cacheKey, res.clone()));
+    return res;
   } catch (e) {
     return json({ error: `No se pudo obtener el top del día: ${e}` }, 502);
   }

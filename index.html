@@ -246,6 +246,8 @@
     th { font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); background: var(--bg-glass); position: sticky; top: 0; }
     td.avg { font-family: var(--mono); font-weight: 600; }
     tr.best-row td { background: rgba(34,197,94,0.06); }
+    .row-rm { width: 24px; height: 24px; border-radius: 50%; background: transparent; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; font-size: 0.8rem; transition: all 0.2s; }
+    .row-rm:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
 
     footer { text-align: center; padding: 3rem 1rem; color: var(--text-dim); font-family: var(--mono); font-size: 0.72rem; }
     footer a { color: var(--text-muted); }
@@ -521,10 +523,9 @@
       try {
         const res = await fetch(`/api/movies/top?kind=${kind}`);
         const data = await res.json();
-        if (data.error || !data.results) { flash(data.error || t('noResults')); return; }
-        const nuevos = data.results.filter(r => !movies.some(m => m.imdbId === r.imdbId));
-        if (!nuevos.length) { flash(t('already')); return; }
-        await Promise.all(nuevos.map(r => pick(r)));
+        if (data.error || !data.results || !data.results.length) { flash(data.error || t('noResults')); return; }
+        movies = []; save(); render(); // el top sustituye la comparación actual
+        await Promise.all(data.results.map(r => pick(r)));
       } catch (e) {
         flash(String(e));
       } finally {
@@ -702,14 +703,16 @@
           ${cells}
           <td>${m.meta.runtime ? m.meta.runtime + ' ' + t('min') : '—'}</td>
           <td>${(m.meta.genres || []).slice(0, 2).join(', ') || '—'}</td>
+          <td><button class="row-rm" data-rm="${m.imdbId}" title="${lang === 'es' ? 'Quitar' : 'Remove'}">✕</button></td>
         </tr>`;
       }).join('');
       tableView.innerHTML = `<table>
         <thead><tr>
           <th>${lang === 'es' ? 'Título' : 'Title'}</th><th>${lang === 'es' ? 'Media' : 'Avg'}</th>
           <th>IMDb</th><th>RT Crít.</th><th>RT Púb.</th><th>Metacritic</th><th>FilmAffinity</th><th>TMDb</th>
-          <th>${t('min')}</th><th>${lang === 'es' ? 'Género' : 'Genre'}</th>
+          <th>${t('min')}</th><th>${lang === 'es' ? 'Género' : 'Genre'}</th><th></th>
         </tr></thead><tbody>${rows}</tbody></table>`;
+      tableView.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => remove(b.dataset.rm)));
     }
 
     // ---------- toolbar actions ----------

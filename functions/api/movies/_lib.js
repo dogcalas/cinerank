@@ -22,7 +22,7 @@ export const json = (data, status = 200, extraHeaders = {}) =>
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=1800', // 30 min en el navegador; el botón ↻ la salta
+      'Cache-Control': 'public, max-age=21600', // 6h en el navegador; el botón ↻ la salta
       ...extraHeaders,
     },
   });
