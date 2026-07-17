@@ -83,6 +83,36 @@
     .hero .kicker { font-family: var(--mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.15em; text-transform: uppercase; }
     .hero h1 { font-size: clamp(1.9rem, 5vw, 3rem); font-weight: 900; letter-spacing: -0.03em; margin: 0.6rem 0 0.5rem; }
     .hero h1 em { font-style: normal; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+    /* palabra que alterna películas ↔ series con efectos rotatorios */
+    .swap-word {
+      display: inline-block;
+      background: var(--gradient);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      transform-origin: 50% 0;
+      will-change: transform, opacity, filter;
+    }
+    @keyframes fxDropIn { 0% { transform: translateY(-1.3em) scale(1.15); opacity: 0; } 55% { transform: translateY(0.14em) scale(1); opacity: 1; } 78% { transform: translateY(-0.07em); } 100% { transform: none; } }
+    @keyframes fxDropOut { to { transform: translateY(1em); opacity: 0; } }
+    @keyframes fxFlipIn { 0% { transform: perspective(500px) rotateX(-95deg); opacity: 0; } 60% { transform: perspective(500px) rotateX(14deg); opacity: 1; } 100% { transform: none; } }
+    @keyframes fxFlipOut { to { transform: perspective(500px) rotateX(90deg); opacity: 0; } }
+    @keyframes fxBlurIn { 0% { transform: scale(1.8); filter: blur(12px); opacity: 0; } 100% { transform: none; filter: blur(0); opacity: 1; } }
+    @keyframes fxBlurOut { to { transform: scale(0.5); filter: blur(10px); opacity: 0; } }
+    @keyframes fxSlideIn { 0% { transform: translateX(0.9em) skewX(-20deg); opacity: 0; } 60% { transform: translateX(-0.1em) skewX(5deg); opacity: 1; } 100% { transform: none; } }
+    @keyframes fxSlideOut { to { transform: translateX(-0.9em) skewX(20deg); opacity: 0; } }
+    .fx-drop-in  { animation: fxDropIn 0.6s cubic-bezier(0.22, 1.2, 0.36, 1) both; }
+    .fx-drop-out { animation: fxDropOut 0.28s ease-in forwards; }
+    .fx-flip-in  { animation: fxFlipIn 0.55s ease-out both; }
+    .fx-flip-out { animation: fxFlipOut 0.28s ease-in forwards; }
+    .fx-blur-in  { animation: fxBlurIn 0.5s ease-out both; }
+    .fx-blur-out { animation: fxBlurOut 0.28s ease-in forwards; }
+    .fx-slide-in { animation: fxSlideIn 0.55s cubic-bezier(0.22, 1.2, 0.36, 1) both; }
+    .fx-slide-out{ animation: fxSlideOut 0.28s ease-in forwards; }
+    @media (prefers-reduced-motion: reduce) {
+      .fx-drop-in, .fx-drop-out, .fx-flip-in, .fx-flip-out,
+      .fx-blur-in, .fx-blur-out, .fx-slide-in, .fx-slide-out { animation: none; }
+    }
     .hero p { color: var(--text-muted); max-width: 620px; margin: 0 auto; font-size: 1rem; }
 
     .searchbox { position: relative; max-width: 620px; margin: 2rem auto 0; }
@@ -274,7 +304,7 @@
   <main class="wrap">
     <section class="hero">
       <div class="kicker" data-i18n="kicker">Agregador de evaluaciones</div>
-      <h1 data-i18n="h1">Compara películas y decide <em>cuál ver</em></h1>
+      <h1 data-i18n="h1">Compara <span id="swapWord" class="swap-word">películas</span> y decide <em>cuál ver</em></h1>
       <p data-i18n="sub">Escribe un título y reúne sus notas de IMDb, Rotten Tomatoes, FilmAffinity y Metacritic con una media agregada. Añade varias para compararlas lado a lado.</p>
 
       <div class="searchbox" id="searchbox">
@@ -337,7 +367,8 @@
     const I18N = {
       back:  { es: '← Volver al inicio', en: '← Back to home' },
       kicker:{ es: 'Agregador de evaluaciones', en: 'Ratings aggregator' },
-      h1:    { es: 'Compara películas y decide <em>cuál ver</em>', en: 'Compare movies and decide <em>what to watch</em>' },
+      h1:    { es: 'Compara <span id="swapWord" class="swap-word">películas</span> y decide <em>cuál ver</em>',
+               en: 'Compare <span id="swapWord" class="swap-word">movies</span> and decide <em>what to watch</em>' },
       sub:   { es: 'Escribe un título y reúne sus notas de IMDb, Rotten Tomatoes, FilmAffinity y Metacritic con una media agregada. Añade varias para compararlas lado a lado.',
                en: 'Type a title and gather its scores from IMDb, Rotten Tomatoes, FilmAffinity and Metacritic with an aggregate average. Add several to compare them side by side.' },
       ph:    { es: 'Busca una película… p. ej. Inception', en: 'Search a movie… e.g. Inception' },
@@ -347,13 +378,13 @@
       viewCards: { es: '▦ Tarjetas', en: '▦ Cards' },
       clear: { es: 'Vaciar todo', en: 'Clear all' },
       winner:{ es: 'Mejor valorada', en: 'Top rated' },
-      emptyTitle: { es: 'Aún no has añadido películas', en: 'No movies added yet' },
-      emptyText:  { es: 'Busca un título arriba para ver todas sus evaluaciones y su media.', en: 'Search a title above to see all its ratings and average.' },
+      emptyTitle: { es: 'Aún no has añadido títulos', en: 'No titles added yet' },
+      emptyText:  { es: 'Busca una película o serie arriba para ver todas sus evaluaciones y su media.', en: 'Search a movie or show above to see all its ratings and average.' },
       disclaimer: { es: 'Las notas se obtienen en tiempo real de fuentes públicas (IMDb, Rotten Tomatoes, FilmAffinity y Metacritic). Alguna fuente puede no estar disponible puntualmente; la media se calcula solo con las disponibles. Datos y logos pertenecen a sus respectivos dueños.',
                     en: 'Ratings are fetched live from public sources (IMDb, Rotten Tomatoes, FilmAffinity and Metacritic). A source may be temporarily unavailable; the average uses only those available. Data and logos belong to their respective owners.' },
       noResults: { es: 'Sin resultados', en: 'No results' },
       loading: { es: 'Cargando evaluaciones…', en: 'Loading ratings…' },
-      count: { es: (n) => `${n} película${n === 1 ? '' : 's'} en comparación`, en: (n) => `${n} movie${n === 1 ? '' : 's'} compared` },
+      count: { es: (n) => `${n} título${n === 1 ? '' : 's'} en comparación`, en: (n) => `${n} title${n === 1 ? '' : 's'} compared` },
       na: { es: 'N/D', en: 'N/A' },
       already: { es: 'Ya está en la comparación', en: 'Already in the comparison' },
       refresh: { es: 'Recalcular notas', en: 'Refresh ratings' },
@@ -740,6 +771,36 @@
       el.textContent = msg; el.style.opacity = '1';
       clearTimeout(flashTimer); flashTimer = setTimeout(() => { el.style.opacity = '0'; }, 2600);
     }
+
+    // ---------- animación películas ↔ series del titular ----------
+    const SWAP_WORDS = { es: ['películas', 'series'], en: ['movies', 'shows'] };
+    const SWAP_FX = [
+      { out: 'fx-drop-out', in: 'fx-drop-in' },   // cae desde arriba con rebote
+      { out: 'fx-flip-out', in: 'fx-flip-in' },   // volteo 3D
+      { out: 'fx-blur-out', in: 'fx-blur-in' },   // zoom + desenfoque
+      { out: 'fx-slide-out', in: 'fx-slide-in' }, // deslizamiento con sesgo
+    ];
+    const ALL_FX = SWAP_FX.flatMap(f => [f.out, f.in]);
+    let fxIdx = 0;
+    setInterval(() => {
+      const el = document.getElementById('swapWord');
+      if (!el || document.hidden) return;
+      const words = SWAP_WORDS[lang] || SWAP_WORDS.es;
+      const fx = SWAP_FX[fxIdx % SWAP_FX.length]; fxIdx++;
+      // la siguiente palabra se deriva del texto actual: robusto ante cambios de idioma
+      const next = el.textContent.trim() === words[0] ? words[1] : words[0];
+      el.classList.remove(...ALL_FX);
+      el.classList.add(fx.out);
+      const swap = () => {
+        el.textContent = next;
+        el.classList.remove(fx.out);
+        el.classList.add(fx.in);
+        el.addEventListener('animationend', () => el.classList.remove(fx.in), { once: true });
+      };
+      el.addEventListener('animationend', swap, { once: true });
+      // por si animationend no dispara (reduced motion), asegura el cambio
+      setTimeout(() => { if (el.textContent !== next) swap(); }, 400);
+    }, 3000);
 
     // ---------- init ----------
     setLang(lang);
