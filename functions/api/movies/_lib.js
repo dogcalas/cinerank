@@ -129,7 +129,12 @@ function firstJsonLd(html, wantType = 'Movie') {
   )];
   for (const b of blocks) {
     try {
-      let parsed = JSON.parse(b[1].trim());
+      // Letterboxd envuelve el JSON-LD en comentarios CDATA.
+      const txt = b[1]
+        .replace(/\/\*\s*<!\[CDATA\[\s*\*\//, '')
+        .replace(/\/\*\s*\]\]>\s*\*\//, '')
+        .trim();
+      let parsed = JSON.parse(txt);
       const arr = Array.isArray(parsed) ? parsed : [parsed];
       for (const node of arr) {
         const type = node && node['@type'];
@@ -458,6 +463,30 @@ async function filmaffinityViaArchive(imdbId, fresh) {
   };
 }
 
+// Letterboxd: sin API pública de notas, pero /imdb/<id>/ redirige a la ficha
+// de la película y su JSON-LD trae la media ponderada (escala 0.5–5). Solo
+// cubre cine: para series el lookup devuelve 404 y la fuente se cae sola.
+async function fromLetterboxd(imdbId, fresh) {
+  const html = await fetchText(`https://letterboxd.com/imdb/${imdbId}/`, {
+    timeout: 9000,
+    fresh,
+  });
+  const ld = firstJsonLd(html);
+  const agg = ld && ld.aggregateRating;
+  const value = agg ? parseFloat(agg.ratingValue) : null;
+  if (value == null || Number.isNaN(value)) return null;
+  return {
+    source: 'Letterboxd',
+    key: 'letterboxd',
+    prio: 1,
+    native: `${value.toFixed(1)}/5`,
+    value,
+    scale: 5,
+    votes: agg.ratingCount ? Number(agg.ratingCount) : null,
+    url: (ld && (ld['@id'] || ld.url)) || `https://letterboxd.com/imdb/${imdbId}/`,
+  };
+}
+
 // OMDb (optional API key): reliable IMDb + RT + Metacritic + solid metadata.
 async function fromOmdb(imdbId, apiKey, fresh) {
   const data = await fetchJson(
@@ -615,6 +644,10 @@ export async function aggregate({ imdbId, title, year, env, fresh = false, type 
     fromRottenTomatoes(title, year, fresh, type)
       .then((r) => r && r.forEach((x) => ratings.push(x)))
       .catch((e) => errors.push({ source: 'Rotten Tomatoes', error: String(e) })),
+
+    fromLetterboxd(imdbId, fresh)
+      .then((r) => r && ratings.push(r))
+      .catch((e) => errors.push({ source: 'Letterboxd', error: String(e) })),
   ];
 
   if (env && env.OMDB_API_KEY) {

@@ -140,7 +140,7 @@
     .sug-item:hover, .sug-item.active { background: var(--accent-glow); }
     .sug-item img, .sug-poster-fallback { width: 40px; height: 58px; object-fit: cover; border-radius: 6px; background: #1c1c25; flex-shrink: 0; }
     .sug-poster-fallback { display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
-    .sug-meta { min-width: 0; }
+    .sug-meta { min-width: 0; text-align: left; }
     .sug-meta .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sug-meta .s { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sug-meta .y { font-family: var(--mono); font-size: 0.72rem; color: var(--accent); }
@@ -234,7 +234,7 @@
     .chip.g { color: #c4b5fd; border-color: rgba(139,92,246,0.3); }
 
     /* Stats compactas: rejilla de 2 por fila en vez de barras a lo ancho. */
-    .ratings { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; flex-shrink: 0; }
+    .ratings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; flex-shrink: 0; }
     .stat {
       display: flex; flex-direction: column; gap: 1px;
       background: var(--bg-glass); border: 1px solid var(--border);
@@ -250,15 +250,58 @@
     .stat.na { opacity: 0.45; }
     .stat.na .val { color: var(--text-dim); font-weight: 400; }
 
-    .plot { margin-top: 1rem; font-size: 0.86rem; color: var(--text-muted); flex: 1; min-height: 26px; overflow-y: auto; scrollbar-width: thin; }
-    .plot summary { cursor: pointer; font-family: var(--mono); font-size: 0.72rem; color: var(--accent); list-style: none; }
-    .plot summary::-webkit-details-marker { display: none; }
-    .plot summary::before { content: '▸ '; }
-    .plot[open] summary::before { content: '▾ '; }
-    .plot p { margin-top: 0.5rem; }
+    .plot-btn { margin-top: 1rem; align-self: flex-start; flex-shrink: 0; background: none; border: none; padding: 0; cursor: pointer; font-family: var(--mono); font-size: 0.72rem; color: var(--accent); }
+    .plot-btn::before { content: '▸ '; }
+    .plot-btn:hover { text-decoration: underline; }
+    .plot-text { max-height: 55vh; overflow-y: auto; scrollbar-width: thin; margin-bottom: 0 !important; }
     .card-foot { margin-top: auto; padding-top: 0.8rem; display: flex; gap: 0.6rem; flex-wrap: wrap; flex-shrink: 0; }
-    .card-foot a { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); border: 1px solid var(--border); padding: 0.25rem 0.6rem; border-radius: 50px; transition: all 0.2s; }
-    .card-foot a:hover { color: var(--text); border-color: var(--accent); }
+    .card-foot a, .card-foot button { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); background: none; border: 1px solid var(--border); padding: 0.25rem 0.6rem; border-radius: 50px; transition: all 0.2s; cursor: pointer; }
+    .card-foot a:hover, .card-foot button:hover { color: var(--text); border-color: var(--accent); }
+
+    /* ---------- modal "¿Dónde ver?" ---------- */
+    .modal-back {
+      position: fixed; inset: 0; z-index: 200; display: none;
+      align-items: center; justify-content: center; padding: 1rem;
+      background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
+    }
+    .modal-back.open { display: flex; }
+    .modal {
+      position: relative; width: 100%; max-width: 500px;
+      background: #14141b; border: 1px solid var(--border); border-radius: 16px;
+      padding: 1.7rem; box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    }
+    .modal h3 { font-size: 1.15rem; margin-bottom: 0.7rem; padding-right: 1.8rem; letter-spacing: -0.01em; }
+    .modal p { color: var(--text-muted); font-size: 0.87rem; line-height: 1.55; margin-bottom: 1rem; }
+    .modal-x {
+      position: absolute; top: 12px; right: 12px; width: 30px; height: 30px;
+      border-radius: 50%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+    }
+    .modal-x:hover { color: var(--text); border-color: var(--accent); }
+    .modal-jw {
+      display: block; text-align: center; font-weight: 600; font-size: 0.9rem;
+      background: var(--accent); color: #fff; padding: 0.65rem 1rem;
+      border-radius: 12px; margin-bottom: 1.1rem; transition: filter 0.2s;
+    }
+    .modal-jw:hover { filter: brightness(1.15); }
+    .copy-label { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+    .copy-row { display: flex; gap: 0.5rem; align-items: stretch; margin-bottom: 1.1rem; }
+    .copy-row code {
+      flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+      font-family: var(--mono); font-size: 0.75rem; color: var(--text);
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.5rem 0.7rem;
+    }
+    .copy-row button {
+      flex-shrink: 0; font-size: 0.95rem; background: none; color: var(--text-muted);
+      border: 1px solid var(--border); border-radius: 10px; padding: 0 0.75rem;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .copy-row button:hover { color: var(--text); border-color: var(--accent); }
+    .modal-disc {
+      font-size: 0.75rem !important; color: var(--text-dim) !important;
+      border-top: 1px solid var(--border); padding-top: 0.9rem; margin-bottom: 0 !important;
+    }
 
     .card.skeleton .poster-wrap { animation: pulse 1.3s infinite; }
     @keyframes pulse { 50% { opacity: 0.5; } }
@@ -352,6 +395,29 @@
     </div>
   </main>
 
+  <div class="modal-back" id="watchModal" role="dialog" aria-modal="true">
+    <div class="modal">
+      <button class="modal-x" id="watchClose" title="Cerrar">✕</button>
+      <h3 id="watchTitle"></h3>
+      <p id="watchText"></p>
+      <a id="watchJw" class="modal-jw" target="_blank" rel="noopener"></a>
+      <div class="copy-label" id="watchImdbLabel"></div>
+      <div class="copy-row">
+        <code id="watchUrl"></code>
+        <button type="button" id="watchCopy">⧉</button>
+      </div>
+      <p class="modal-disc" id="watchDisc"></p>
+    </div>
+  </div>
+
+  <div class="modal-back" id="plotModal" role="dialog" aria-modal="true">
+    <div class="modal">
+      <button class="modal-x" id="plotClose" title="Cerrar">✕</button>
+      <h3 id="plotTitle"></h3>
+      <p id="plotText" class="plot-text"></p>
+    </div>
+  </div>
+
   <footer class="wrap">
     <p class="disclaimer" data-i18n="disclaimer">
       Las notas se obtienen en tiempo real de fuentes públicas (IMDb, Rotten Tomatoes, FilmAffinity y Metacritic). Alguna fuente puede no estar disponible puntualmente; la media se calcula solo con las disponibles. Datos y logos pertenecen a sus respectivos dueños.
@@ -369,8 +435,8 @@
       kicker:{ es: 'Agregador de evaluaciones', en: 'Ratings aggregator' },
       h1:    { es: 'Compara <span id="swapWord" class="swap-word">películas</span> y decide <em>cuál ver</em>',
                en: 'Compare <span id="swapWord" class="swap-word">movies</span> and decide <em>what to watch</em>' },
-      sub:   { es: 'Escribe un título y reúne sus notas de IMDb, Rotten Tomatoes, FilmAffinity y Metacritic con una media agregada. Añade varias para compararlas lado a lado.',
-               en: 'Type a title and gather its scores from IMDb, Rotten Tomatoes, FilmAffinity and Metacritic with an aggregate average. Add several to compare them side by side.' },
+      sub:   { es: 'Escribe un título y reúne sus notas de IMDb, Rotten Tomatoes, FilmAffinity, Metacritic y Letterboxd con una media agregada. Añade varias para compararlas lado a lado.',
+               en: 'Type a title and gather its scores from IMDb, Rotten Tomatoes, FilmAffinity, Metacritic and Letterboxd with an aggregate average. Add several to compare them side by side.' },
       ph:    { es: 'Busca una película o serie… p. ej. Inception', en: 'Search a movie or show… e.g. Inception' },
       sort:  { es: '↑ Ordenar por media', en: '↑ Sort by average' },
       sortTime: { es: '⏱ Ordenar por duración', en: '⏱ Sort by runtime' },
@@ -380,8 +446,8 @@
       winner:{ es: 'Mejor valorada', en: 'Top rated' },
       emptyTitle: { es: 'Aún no has añadido títulos', en: 'No titles added yet' },
       emptyText:  { es: 'Busca una película o serie arriba para ver todas sus evaluaciones y su media.', en: 'Search a movie or show above to see all its ratings and average.' },
-      disclaimer: { es: 'Las notas se obtienen en tiempo real de fuentes públicas (IMDb, Rotten Tomatoes, FilmAffinity y Metacritic). Alguna fuente puede no estar disponible puntualmente; la media se calcula solo con las disponibles. Datos y logos pertenecen a sus respectivos dueños.',
-                    en: 'Ratings are fetched live from public sources (IMDb, Rotten Tomatoes, FilmAffinity and Metacritic). A source may be temporarily unavailable; the average uses only those available. Data and logos belong to their respective owners.' },
+      disclaimer: { es: 'Las notas se obtienen en tiempo real de fuentes públicas (IMDb, Rotten Tomatoes, FilmAffinity, Metacritic, Letterboxd y TMDb). Alguna fuente puede no estar disponible puntualmente; la media se calcula solo con las disponibles. Datos y logos pertenecen a sus respectivos dueños.',
+                    en: 'Ratings are fetched live from public sources (IMDb, Rotten Tomatoes, FilmAffinity, Metacritic, Letterboxd and TMDb). A source may be temporarily unavailable; the average uses only those available. Data and logos belong to their respective owners.' },
       noResults: { es: 'Sin resultados', en: 'No results' },
       loading: { es: 'Cargando evaluaciones…', en: 'Loading ratings…' },
       count: { es: (n) => `${n} título${n === 1 ? '' : 's'} en comparación`, en: (n) => `${n} title${n === 1 ? '' : 's'} compared` },
@@ -395,17 +461,28 @@
       plotToggle: { es: 'Sinopsis', en: 'Synopsis' },
       min: { es: 'min', en: 'min' },
       sources: { es: (n) => `${n} fuente${n === 1 ? '' : 's'}`, en: (n) => `${n} source${n === 1 ? '' : 's'}` },
+      copyImdb: { es: 'Copiar enlace de IMDb', en: 'Copy IMDb link' },
+      copied: { es: 'Enlace de IMDb copiado', en: 'IMDb link copied' },
+      copyFail: { es: 'No se pudo copiar el enlace', en: 'Could not copy the link' },
+      jwTitle: { es: 'Ver dónde está disponible en tu región (JustWatch)', en: 'See where it’s available in your region (JustWatch)' },
+      watchTitle: { es: (tt) => `¿Dónde ver «${tt}»?`, en: (tt) => `Where to watch “${tt}”?` },
+      watchText: { es: 'CineRank no aloja ni enlaza contenido en streaming. En JustWatch puedes consultar en qué plataformas legales está disponible según tu región:',
+                   en: 'CineRank does not host or link streaming content. On JustWatch you can check which legal platforms carry it in your region:' },
+      watchJw: { es: '🔎 Buscar en JustWatch', en: '🔎 Search on JustWatch' },
+      watchImdb: { es: 'Ficha en IMDb:', en: 'IMDb page:' },
+      watchDisc: { es: '🎬 CineRank está en contra de la piratería y no la apoya. La mejor forma de disfrutar una película es apoyar a quienes la hacen: ve al cine o usa plataformas legales.',
+                   en: '🎬 CineRank is against piracy and does not support it. The best way to enjoy a movie is to support the people who make it: go to the cinema or use legal platforms.' },
     };
     const SRC_COLORS = {
       imdb: '#f5c518', rt_critics: '#fa320a', rt_audience: '#fcb320',
-      metacritic: '#00ce7a', filmaffinity: '#0f4c9c', tmdb: '#01b4e4',
+      metacritic: '#00ce7a', filmaffinity: '#0f4c9c', letterboxd: '#ff8000', tmdb: '#01b4e4',
     };
     const SRC_LABEL = {
       imdb: 'IMDb', rt_critics: 'RT · Crítica', rt_audience: 'RT · Público',
-      metacritic: 'Metacritic', filmaffinity: 'FilmAffinity', tmdb: 'TMDb',
+      metacritic: 'Metacritic', filmaffinity: 'FilmAffinity', letterboxd: 'Letterboxd', tmdb: 'TMDb',
     };
     // Order sources consistently in every card, showing N/A rows for missing ones.
-    const SRC_ORDER = ['imdb', 'rt_critics', 'rt_audience', 'metacritic', 'filmaffinity', 'tmdb'];
+    const SRC_ORDER = ['imdb', 'rt_critics', 'rt_audience', 'metacritic', 'filmaffinity', 'letterboxd', 'tmdb'];
     // Los países llegan de OMDb en inglés; bandera para los más comunes.
     const FLAGS = {
       'United States': '🇺🇸', 'United Kingdom': '🇬🇧', 'Spain': '🇪🇸', 'France': '🇫🇷',
@@ -649,6 +726,9 @@
       grid.innerHTML = shown.map(m => card(m, best)).join('');
       grid.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => remove(b.dataset.rm)));
       grid.querySelectorAll('[data-rf]').forEach(b => b.addEventListener('click', () => refreshMovie(b.dataset.rf, b)));
+      grid.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copyText(b.dataset.copy)));
+      grid.querySelectorAll('[data-watch]').forEach(b => b.addEventListener('click', () => openWatch(b.dataset.watch)));
+      grid.querySelectorAll('[data-plot]').forEach(b => b.addEventListener('click', () => openPlot(b.dataset.plot)));
     }
 
     function card(m, best) {
@@ -715,10 +795,12 @@
             ${metaLine}
             ${chips.length ? `<div class="chips">${chips.join('')}</div>` : ''}
             <div class="ratings">${rows}</div>
-            ${meta.plot ? `<details class="plot"><summary>${t('plotToggle')}</summary><p>${esc(meta.plot)}</p></details>` : ''}
+            ${meta.plot ? `<button type="button" class="plot-btn" data-plot="${m.imdbId}">${t('plotToggle')}</button>` : ''}
             <div class="card-foot">
               <a href="https://www.imdb.com/title/${m.imdbId}/" target="_blank" rel="noopener">IMDb ↗</a>
-              <a href="https://www.imdb.su/title/${m.imdbId}/" target="_blank" rel="noopener">▶ Play</a>
+              <button type="button" data-copy="https://www.imdb.com/title/${m.imdbId}/" title="${t('copyImdb')}">⧉ ${lang === 'es' ? 'Copiar' : 'Copy'}</button>
+              <a href="${jwUrl(meta.title)}" target="_blank" rel="noopener" title="${t('jwTitle')}">JustWatch ↗</a>
+              <button type="button" data-watch="${m.imdbId}">▶ Play</button>
             </div>
           </div>
         </div>`;
@@ -741,7 +823,7 @@
       tableView.innerHTML = `<table>
         <thead><tr>
           <th>${lang === 'es' ? 'Título' : 'Title'}</th><th>${lang === 'es' ? 'Media' : 'Avg'}</th>
-          <th>IMDb</th><th>RT Crít.</th><th>RT Púb.</th><th>Metacritic</th><th>FilmAffinity</th><th>TMDb</th>
+          <th>IMDb</th><th>RT Crít.</th><th>RT Púb.</th><th>Metacritic</th><th>FilmAffinity</th><th>Letterboxd</th><th>TMDb</th>
           <th>${t('min')}</th><th>${lang === 'es' ? 'Género' : 'Genre'}</th><th></th>
         </tr></thead><tbody>${rows}</tbody></table>`;
       tableView.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => remove(b.dataset.rm)));
@@ -761,6 +843,70 @@
 
     // ---------- helpers ----------
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+    // Búsqueda en JustWatch en el idioma de la interfaz; JustWatch permite
+    // cambiar de país en su propia página si la región detectada no coincide.
+    function jwUrl(title) {
+      return lang === 'es'
+        ? `https://www.justwatch.com/es/buscar?q=${encodeURIComponent(title || '')}`
+        : `https://www.justwatch.com/us/search?q=${encodeURIComponent(title || '')}`;
+    }
+
+    function copyText(txt) {
+      const done = () => flash(t('copied'));
+      const fallback = () => {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = txt;
+          ta.style.cssText = 'position:fixed;opacity:0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+          done();
+        } catch (_) { flash(t('copyFail')); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText)
+        navigator.clipboard.writeText(txt).then(done).catch(fallback);
+      else fallback();
+    }
+
+    // ---------- modal "¿Dónde ver?" ----------
+    function openWatch(imdbId) {
+      const m = movies.find(x => x.imdbId === imdbId);
+      if (!m) return;
+      const title = (m.meta && m.meta.title) || imdbId;
+      const imdbUrl = `https://www.imdb.com/title/${imdbId}/`;
+      $('watchTitle').textContent = t('watchTitle', title);
+      $('watchText').textContent = t('watchText');
+      const jw = $('watchJw');
+      jw.textContent = t('watchJw');
+      jw.href = jwUrl(title);
+      $('watchImdbLabel').textContent = t('watchImdb');
+      $('watchUrl').textContent = imdbUrl;
+      $('watchCopy').title = t('copyImdb');
+      $('watchCopy').onclick = () => copyText(imdbUrl);
+      $('watchDisc').textContent = t('watchDisc');
+      $('watchModal').classList.add('open');
+    }
+    // ---------- modal sinopsis ----------
+    function openPlot(imdbId) {
+      const m = movies.find(x => x.imdbId === imdbId);
+      if (!m || !m.meta || !m.meta.plot) return;
+      $('plotTitle').textContent = `${m.meta.title || ''}${m.meta.year ? ' (' + m.meta.year + ')' : ''}`;
+      $('plotText').textContent = m.meta.plot;
+      $('plotModal').classList.add('open');
+    }
+
+    // Cierre común: botón ✕, clic en el fondo o Escape.
+    $('watchClose').addEventListener('click', () => $('watchModal').classList.remove('open'));
+    $('plotClose').addEventListener('click', () => $('plotModal').classList.remove('open'));
+    document.querySelectorAll('.modal-back').forEach(mb =>
+      mb.addEventListener('click', (e) => { if (e.target === mb) mb.classList.remove('open'); }));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape')
+        document.querySelectorAll('.modal-back.open').forEach(mb => mb.classList.remove('open'));
+    });
     function fmt(n) { return (Math.round(n * 10) / 10).toFixed(1); }
     let flashTimer;
     function flash(msg) {
