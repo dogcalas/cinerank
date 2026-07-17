@@ -726,7 +726,6 @@
       grid.innerHTML = shown.map(m => card(m, best)).join('');
       grid.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => remove(b.dataset.rm)));
       grid.querySelectorAll('[data-rf]').forEach(b => b.addEventListener('click', () => refreshMovie(b.dataset.rf, b)));
-      grid.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copyText(b.dataset.copy)));
       grid.querySelectorAll('[data-watch]').forEach(b => b.addEventListener('click', () => openWatch(b.dataset.watch)));
       grid.querySelectorAll('[data-plot]').forEach(b => b.addEventListener('click', () => openPlot(b.dataset.plot)));
     }
@@ -798,7 +797,6 @@
             ${meta.plot ? `<button type="button" class="plot-btn" data-plot="${m.imdbId}">${t('plotToggle')}</button>` : ''}
             <div class="card-foot">
               <a href="https://www.imdb.com/title/${m.imdbId}/" target="_blank" rel="noopener">IMDb ↗</a>
-              <button type="button" data-copy="https://www.imdb.com/title/${m.imdbId}/" title="${t('copyImdb')}">⧉ ${lang === 'es' ? 'Copiar' : 'Copy'}</button>
               <a href="${jwUrl(meta.title)}" target="_blank" rel="noopener" title="${t('jwTitle')}">JustWatch ↗</a>
               <button type="button" data-watch="${m.imdbId}">▶ Play</button>
             </div>
