@@ -152,6 +152,7 @@
     .card {
       background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px;
       overflow: hidden; position: relative; animation: rise 0.35s ease both;
+      display: flex; flex-direction: column; height: 650px;
     }
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
     .card.best { border-color: rgba(34,197,94,0.4); box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 12px 40px rgba(0,0,0,0.35); }
@@ -163,7 +164,9 @@
     .card .rf:hover { background: var(--accent-glow); color: var(--text); border-color: var(--accent); }
     .card .rf.spinning { animation: rot 0.8s linear infinite; pointer-events: none; }
 
-    .poster-wrap { position: relative; aspect-ratio: 16/9; overflow: hidden; background: #14141c; }
+    /* Altura fija (no proporcional al ancho): así el cuerpo de la tarjeta
+       dispone siempre del mismo espacio y el tamaño total es estable. */
+    .poster-wrap { position: relative; height: 210px; overflow: hidden; background: #14141c; flex-shrink: 0; }
     /* Los pósters son verticales: capa de fondo difuminada a sangre + póster
        completo (contain) encima, para que no se vea cortado. */
     .poster-wrap .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(22px) brightness(0.4) saturate(1.2); transform: scale(1.15); }
@@ -185,13 +188,20 @@
     .avg-badge .n { font-family: var(--mono); font-weight: 600; font-size: 1.25rem; line-height: 1; }
     .avg-badge .l { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
-    .card-body { position: relative; padding: 1.5rem 1.1rem 1.1rem; }
-    .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; }
+    .card-body {
+      position: relative; padding: 1.5rem 1.1rem 1.1rem;
+      flex: 1; min-height: 0; display: flex; flex-direction: column;
+    }
+    /* duración · clasificación · dirección · país, como texto sobre las tags
+       (padding-right para no chocar con el círculo de la media) */
+    .meta-line { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.6rem; padding-right: 70px; flex-shrink: 0; }
+    /* tags: máximo 2 filas; si hay más, scroll */
+    .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; max-height: 56px; overflow-y: auto; flex-shrink: 0; scrollbar-width: thin; }
     .chip { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); background: var(--bg-glass); border: 1px solid var(--border); padding: 0.2rem 0.55rem; border-radius: 50px; }
     .chip.g { color: #c4b5fd; border-color: rgba(139,92,246,0.3); }
 
     /* Stats compactas: rejilla de 2 por fila en vez de barras a lo ancho. */
-    .ratings { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .ratings { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; flex-shrink: 0; }
     .stat {
       display: flex; flex-direction: column; gap: 1px;
       background: var(--bg-glass); border: 1px solid var(--border);
@@ -207,13 +217,13 @@
     .stat.na { opacity: 0.45; }
     .stat.na .val { color: var(--text-dim); font-weight: 400; }
 
-    .plot { margin-top: 1rem; font-size: 0.86rem; color: var(--text-muted); }
+    .plot { margin-top: 1rem; font-size: 0.86rem; color: var(--text-muted); flex: 1; min-height: 26px; overflow-y: auto; scrollbar-width: thin; }
     .plot summary { cursor: pointer; font-family: var(--mono); font-size: 0.72rem; color: var(--accent); list-style: none; }
     .plot summary::-webkit-details-marker { display: none; }
     .plot summary::before { content: '▸ '; }
     .plot[open] summary::before { content: '▾ '; }
     .plot p { margin-top: 0.5rem; }
-    .card-foot { margin-top: 1rem; display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .card-foot { margin-top: auto; padding-top: 0.8rem; display: flex; gap: 0.6rem; flex-wrap: wrap; flex-shrink: 0; }
     .card-foot a { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); border: 1px solid var(--border); padding: 0.25rem 0.6rem; border-radius: 50px; transition: all 0.2s; }
     .card-foot a:hover { color: var(--text); border-color: var(--accent); }
 
@@ -352,6 +362,20 @@
     };
     // Order sources consistently in every card, showing N/A rows for missing ones.
     const SRC_ORDER = ['imdb', 'rt_critics', 'rt_audience', 'metacritic', 'filmaffinity', 'tmdb'];
+    // Los países llegan de OMDb en inglés; bandera para los más comunes.
+    const FLAGS = {
+      'United States': '🇺🇸', 'United Kingdom': '🇬🇧', 'Spain': '🇪🇸', 'France': '🇫🇷',
+      'Germany': '🇩🇪', 'Italy': '🇮🇹', 'Japan': '🇯🇵', 'South Korea': '🇰🇷',
+      'Canada': '🇨🇦', 'Mexico': '🇲🇽', 'Argentina': '🇦🇷', 'Brazil': '🇧🇷',
+      'China': '🇨🇳', 'India': '🇮🇳', 'Australia': '🇦🇺', 'New Zealand': '🇳🇿',
+      'Ireland': '🇮🇪', 'Denmark': '🇩🇰', 'Sweden': '🇸🇪', 'Norway': '🇳🇴',
+      'Netherlands': '🇳🇱', 'Belgium': '🇧🇪', 'Austria': '🇦🇹', 'Switzerland': '🇨🇭',
+      'Poland': '🇵🇱', 'Russia': '🇷🇺', 'Turkey': '🇹🇷', 'Hong Kong': '🇭🇰',
+      'Taiwan': '🇹🇼', 'Thailand': '🇹🇭', 'Chile': '🇨🇱', 'Colombia': '🇨🇴',
+      'Cuba': '🇨🇺', 'Portugal': '🇵🇹', 'Greece': '🇬🇷', 'Czech Republic': '🇨🇿',
+      'Hungary': '🇭🇺', 'Romania': '🇷🇴', 'Iceland': '🇮🇸', 'South Africa': '🇿🇦',
+      'Israel': '🇮🇱', 'Iran': '🇮🇷', 'Finland': '🇫🇮', 'Ukraine': '🇺🇦',
+    };
 
     let lang = localStorage.getItem('lang') || ((navigator.language || 'es').startsWith('es') ? 'es' : 'en');
     const t = (k, ...a) => { const v = I18N[k] ? I18N[k][lang] : k; return typeof v === 'function' ? v(...a) : v; };
@@ -592,15 +616,22 @@
           : `<div class="stat">${inner}</div>`;
       }).join('');
 
+      // duración · clasificación · dirección · país (texto, encima de las tags)
+      const bits = [];
+      if (meta.runtime) bits.push(`⏱ ${meta.runtime} ${t('min')}`);
+      if (meta.contentRating) bits.push(esc(meta.contentRating));
+      if (meta.director && meta.director.length) bits.push(`🎬 ${esc(meta.director.slice(0, 2).join(', '))}`);
+      if (meta.country) {
+        const c = meta.country.split(',')[0].trim();
+        bits.push(`${FLAGS[c] ? FLAGS[c] + ' ' : ''}${esc(c)}`);
+      }
+      const metaLine = bits.length ? `<div class="meta-line">${bits.join(' · ')}</div>` : '';
+
       const chips = [];
       if (/tvMiniSeries/i.test(meta.type || '')) chips.push(`<span class="chip">📺 ${lang === 'es' ? 'Miniserie' : 'Miniseries'}</span>`);
       else if (/tvSeries/i.test(meta.type || '')) chips.push(`<span class="chip">📺 ${lang === 'es' ? 'Serie' : 'Series'}</span>`);
-      (meta.genres || []).slice(0, 3).forEach(g => chips.push(`<span class="chip g">${esc(g)}</span>`));
-      if (meta.runtime) chips.push(`<span class="chip">⏱ ${meta.runtime} ${t('min')}</span>`);
+      (meta.genres || []).forEach(g => chips.push(`<span class="chip g">${esc(g)}</span>`));
       if (meta.popularity) chips.push(`<span class="chip" title="${lang === 'es' ? 'Popularidad en IMDb' : 'IMDb popularity'}">🔥 #${meta.popularity} IMDb</span>`);
-      if (meta.contentRating) chips.push(`<span class="chip">${esc(meta.contentRating)}</span>`);
-      if (meta.director && meta.director.length) chips.push(`<span class="chip">🎬 ${esc(meta.director.slice(0, 2).join(', '))}</span>`);
-      if (meta.country) chips.push(`<span class="chip">${esc(meta.country.split(',')[0])}</span>`);
 
       const avg = m.average;
       return `
@@ -617,6 +648,7 @@
               <span class="n" style="color:${avg != null ? scoreColor(avg) : 'var(--text-dim)'}">${avg != null ? fmt(avg) : '—'}</span>
               <span class="l">${t('sources', m.sourceCount || 0)}</span>
             </div>
+            ${metaLine}
             ${chips.length ? `<div class="chips">${chips.join('')}</div>` : ''}
             <div class="ratings">${rows}</div>
             ${meta.plot ? `<details class="plot"><summary>${t('plotToggle')}</summary><p>${esc(meta.plot)}</p></details>` : ''}
