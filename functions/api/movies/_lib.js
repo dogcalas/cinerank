@@ -153,11 +153,19 @@ export async function searchImdb(query) {
     `https://v3.sg.media-imdb.com/suggestion/${encodeURIComponent(first)}/` +
     `${encodeURIComponent(q)}.json?includeVideos=0`;
   const data = await fetchJson(url, { timeout: 8000 });
+  // La API de sugerencias devuelve el tipo con etiquetas humanas ("TV series");
+  // normalizamos a camelCase, que es lo que espera el resto del código.
+  const TYPE_MAP = {
+    'TV series': 'tvSeries',
+    'TV mini-series': 'tvMiniSeries',
+    'TV movie': 'tvMovie',
+  };
   const allowed = new Set([
     'feature', 'tvMovie', 'video', 'tvSeries', 'tvMiniSeries', 'short', 'documentary',
   ]);
   return (data.d || [])
     .filter((it) => typeof it.id === 'string' && it.id.startsWith('tt'))
+    .map((it) => ({ ...it, q: TYPE_MAP[it.q] || it.q }))
     .filter((it) => !it.q || allowed.has(it.q))
     .slice(0, 12)
     .map((it) => ({
