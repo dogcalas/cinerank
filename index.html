@@ -289,30 +289,6 @@
       color: var(--text-muted); cursor: pointer; transition: all 0.2s;
     }
     .modal-x:hover { color: var(--text); border-color: var(--accent); }
-    .modal-jw {
-      display: block; text-align: center; font-weight: 600; font-size: 0.9rem;
-      background: var(--accent); color: #fff; padding: 0.65rem 1rem;
-      border-radius: 12px; margin-bottom: 1.1rem; transition: filter 0.2s;
-    }
-    .modal-jw:hover { filter: brightness(1.15); }
-    .copy-label { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); margin-bottom: 0.35rem; }
-    .copy-row { display: flex; gap: 0.5rem; align-items: stretch; margin-bottom: 1.1rem; }
-    .copy-row code {
-      flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
-      font-family: var(--mono); font-size: 0.75rem; color: var(--text);
-      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
-      border-radius: 10px; padding: 0.5rem 0.7rem;
-    }
-    .copy-row button {
-      flex-shrink: 0; font-size: 0.95rem; background: none; color: var(--text-muted);
-      border: 1px solid var(--border); border-radius: 10px; padding: 0 0.75rem;
-      cursor: pointer; transition: all 0.2s;
-    }
-    .copy-row button:hover { color: var(--text); border-color: var(--accent); }
-    .modal-disc {
-      font-size: 0.75rem !important; color: var(--text-dim) !important;
-      border-top: 1px solid var(--border); padding-top: 0.9rem; margin-bottom: 0 !important;
-    }
 
     .card.skeleton .poster-wrap { animation: pulse 1.3s infinite; }
     @keyframes pulse { 50% { opacity: 0.5; } }
@@ -406,21 +382,6 @@
     </div>
   </main>
 
-  <div class="modal-back" id="watchModal" role="dialog" aria-modal="true">
-    <div class="modal">
-      <button class="modal-x" id="watchClose" title="Cerrar">✕</button>
-      <h3 id="watchTitle"></h3>
-      <p id="watchText"></p>
-      <a id="watchJw" class="modal-jw" target="_blank" rel="noopener"></a>
-      <div class="copy-label" id="watchImdbLabel"></div>
-      <div class="copy-row">
-        <code id="watchUrl"></code>
-        <button type="button" id="watchCopy">⧉</button>
-      </div>
-      <p class="modal-disc" id="watchDisc"></p>
-    </div>
-  </div>
-
   <div class="modal-back" id="plotModal" role="dialog" aria-modal="true">
     <div class="modal">
       <button class="modal-x" id="plotClose" title="Cerrar">✕</button>
@@ -472,17 +433,7 @@
       plotToggle: { es: 'Sinopsis', en: 'Synopsis' },
       min: { es: 'min', en: 'min' },
       sources: { es: (n) => `${n} fuente${n === 1 ? '' : 's'}`, en: (n) => `${n} source${n === 1 ? '' : 's'}` },
-      copyImdb: { es: 'Copiar enlace de IMDb', en: 'Copy IMDb link' },
-      copied: { es: 'Enlace de IMDb copiado', en: 'IMDb link copied' },
-      copyFail: { es: 'No se pudo copiar el enlace', en: 'Could not copy the link' },
       jwTitle: { es: 'Ver dónde está disponible en tu región (JustWatch)', en: 'See where it’s available in your region (JustWatch)' },
-      watchTitle: { es: (tt) => `¿Dónde ver «${tt}»?`, en: (tt) => `Where to watch “${tt}”?` },
-      watchText: { es: 'CineRank no aloja ni enlaza contenido en streaming. En JustWatch puedes consultar en qué plataformas legales está disponible según tu región:',
-                   en: 'CineRank does not host or link streaming content. On JustWatch you can check which legal platforms carry it in your region:' },
-      watchJw: { es: '🔎 Buscar en JustWatch', en: '🔎 Search on JustWatch' },
-      watchImdb: { es: 'Ficha en IMDb:', en: 'IMDb page:' },
-      watchDisc: { es: '🎬 CineRank está en contra de la piratería y no la apoya. La mejor forma de disfrutar una película es apoyar a quienes la hacen: ve al cine o usa plataformas legales.',
-                   en: '🎬 CineRank is against piracy and does not support it. The best way to enjoy a movie is to support the people who make it: go to the cinema or use legal platforms.' },
     };
     const SRC_COLORS = {
       imdb: '#f5c518', rt_critics: '#fa320a', rt_audience: '#fcb320',
@@ -737,7 +688,6 @@
       grid.innerHTML = shown.map(m => card(m, best)).join('');
       grid.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => remove(b.dataset.rm)));
       grid.querySelectorAll('[data-rf]').forEach(b => b.addEventListener('click', () => refreshMovie(b.dataset.rf, b)));
-      grid.querySelectorAll('[data-watch]').forEach(b => b.addEventListener('click', () => openWatch(b.dataset.watch)));
       grid.querySelectorAll('[data-plot]').forEach(b => b.addEventListener('click', () => openPlot(b.dataset.plot)));
     }
 
@@ -812,7 +762,6 @@
             <div class="card-foot">
               <a href="https://www.imdb.com/title/${m.imdbId}/" target="_blank" rel="noopener">IMDb ↗</a>
               <a href="${jwUrl(meta.title)}" target="_blank" rel="noopener" title="${t('jwTitle')}">JustWatch ↗</a>
-              <button type="button" data-watch="${m.imdbId}">▶ Play</button>
             </div>
           </div>
         </div>`;
@@ -864,43 +813,6 @@
         : `https://www.justwatch.com/us/search?q=${encodeURIComponent(title || '')}`;
     }
 
-    function copyText(txt) {
-      const done = () => flash(t('copied'));
-      const fallback = () => {
-        try {
-          const ta = document.createElement('textarea');
-          ta.value = txt;
-          ta.style.cssText = 'position:fixed;opacity:0';
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand('copy');
-          ta.remove();
-          done();
-        } catch (_) { flash(t('copyFail')); }
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText)
-        navigator.clipboard.writeText(txt).then(done).catch(fallback);
-      else fallback();
-    }
-
-    // ---------- modal "¿Dónde ver?" ----------
-    function openWatch(imdbId) {
-      const m = movies.find(x => x.imdbId === imdbId);
-      if (!m) return;
-      const title = (m.meta && m.meta.title) || imdbId;
-      const imdbUrl = `https://www.imdb.com/title/${imdbId}/`;
-      $('watchTitle').textContent = t('watchTitle', title);
-      $('watchText').textContent = t('watchText');
-      const jw = $('watchJw');
-      jw.textContent = t('watchJw');
-      jw.href = jwUrl(title);
-      $('watchImdbLabel').textContent = t('watchImdb');
-      $('watchUrl').textContent = imdbUrl;
-      $('watchCopy').title = t('copyImdb');
-      $('watchCopy').onclick = () => copyText(imdbUrl);
-      $('watchDisc').textContent = t('watchDisc');
-      $('watchModal').classList.add('open');
-    }
     // ---------- modal sinopsis ----------
     function openPlot(imdbId) {
       const m = movies.find(x => x.imdbId === imdbId);
@@ -911,7 +823,6 @@
     }
 
     // Cierre común: botón ✕, clic en el fondo o Escape.
-    $('watchClose').addEventListener('click', () => $('watchModal').classList.remove('open'));
     $('plotClose').addEventListener('click', () => $('plotModal').classList.remove('open'));
     document.querySelectorAll('.modal-back').forEach(mb =>
       mb.addEventListener('click', (e) => { if (e.target === mb) mb.classList.remove('open'); }));
