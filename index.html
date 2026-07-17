@@ -781,26 +781,32 @@
       { out: 'fx-slide-out', in: 'fx-slide-in' }, // deslizamiento con sesgo
     ];
     const ALL_FX = SWAP_FX.flatMap(f => [f.out, f.in]);
-    let fxIdx = 0;
-    setInterval(() => {
+    // El primer ciclo completo (películas → series → películas) va rápido, a
+    // 3s; a partir de ahí la palabra cambia cada 1 min.
+    let fxIdx = 0, swapCount = 0;
+    function doSwap() {
       const el = document.getElementById('swapWord');
-      if (!el || document.hidden) return;
-      const words = SWAP_WORDS[lang] || SWAP_WORDS.es;
-      const fx = SWAP_FX[fxIdx % SWAP_FX.length]; fxIdx++;
-      // la siguiente palabra se deriva del texto actual: robusto ante cambios de idioma
-      const next = el.textContent.trim() === words[0] ? words[1] : words[0];
-      el.classList.remove(...ALL_FX);
-      el.classList.add(fx.out);
-      const swap = () => {
-        el.textContent = next;
-        el.classList.remove(fx.out);
-        el.classList.add(fx.in);
-        el.addEventListener('animationend', () => el.classList.remove(fx.in), { once: true });
-      };
-      el.addEventListener('animationend', swap, { once: true });
-      // por si animationend no dispara (reduced motion), asegura el cambio
-      setTimeout(() => { if (el.textContent !== next) swap(); }, 400);
-    }, 3000);
+      if (el && !document.hidden) {
+        const words = SWAP_WORDS[lang] || SWAP_WORDS.es;
+        const fx = SWAP_FX[fxIdx % SWAP_FX.length]; fxIdx++;
+        // la siguiente palabra se deriva del texto actual: robusto ante cambios de idioma
+        const next = el.textContent.trim() === words[0] ? words[1] : words[0];
+        el.classList.remove(...ALL_FX);
+        el.classList.add(fx.out);
+        const swap = () => {
+          el.textContent = next;
+          el.classList.remove(fx.out);
+          el.classList.add(fx.in);
+          el.addEventListener('animationend', () => el.classList.remove(fx.in), { once: true });
+        };
+        el.addEventListener('animationend', swap, { once: true });
+        // por si animationend no dispara (reduced motion), asegura el cambio
+        setTimeout(() => { if (el.textContent !== next) swap(); }, 400);
+        swapCount++;
+      }
+      setTimeout(doSwap, swapCount < 2 ? 3000 : 60000);
+    }
+    setTimeout(doSwap, 3000);
 
     // ---------- init ----------
     setLang(lang);
