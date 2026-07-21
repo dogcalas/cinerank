@@ -1,20 +1,74 @@
-// GET /pelicula/<titulo>-<año>-<ttID>
+// GET /pelicula/<titulo>-<año>-<ttID>[?lang=es|en]
 // Ficha por película renderizada en el edge: HTML completo con los detalles
 // (director, género, duración, sinopsis…), todas las notas y la media.
 // Al ser server-side, los bots de WhatsApp/Twitter ven su propio snippet
 // (OG/Twitter) y Google recibe JSON-LD Movie + AggregateRating, que es lo que
 // usa para mostrar estrellas en los resultados de búsqueda.
+// Idioma: ?lang explícito > Accept-Language del navegador > español.
 import {
   aggregate, searchImdb, slugify, parseSlug, escapeHtml as esc, SITE_ORIGIN,
 } from '../api/movies/_lib.js';
 
-const SRC_LABEL = {
-  imdb: 'IMDb', rt_critics: 'Rotten Tomatoes · Crítica', rt_audience: 'Rotten Tomatoes · Público',
-  metacritic: 'Metacritic', filmaffinity: 'FilmAffinity', letterboxd: 'Letterboxd', tmdb: 'TMDb',
-};
 const SRC_COLORS = {
   imdb: '#f5c518', rt_critics: '#fa320a', rt_audience: '#fcb320',
   metacritic: '#00ce7a', filmaffinity: '#0f4c9c', letterboxd: '#ff8000', tmdb: '#01b4e4',
+};
+
+const L10N = {
+  es: {
+    srcLabel: {
+      imdb: 'IMDb', rt_critics: 'Rotten Tomatoes · Crítica', rt_audience: 'Rotten Tomatoes · Público',
+      metacritic: 'Metacritic', filmaffinity: 'FilmAffinity', letterboxd: 'Letterboxd', tmdb: 'TMDb',
+    },
+    titleSuffix: 'notas y media',
+    avgOf: (n) => `media de ${n} fuentes`,
+    directedBy: 'Dirigida por',
+    series: '📺 Serie',
+    min: 'min',
+    avgLabel: 'media',
+    avgNote: (n, v) =>
+      `Media aritmética de ${n} fuente${n === 1 ? '' : 's'} normalizadas a escala 0–10` +
+      `${v ? `, con ${v} votos en total` : ''}.`,
+    votes: 'votos',
+    synopsis: 'Sinopsis',
+    compare: '＋ Comparar con otras',
+    share: '🔗 Compartir',
+    shareCopied: '✓ Enlace copiado',
+    where: '¿Dónde verla? · JustWatch ↗',
+    back: '← Comparador',
+    jw: (title) => `https://www.justwatch.com/es/buscar?q=${encodeURIComponent(title)}`,
+    footer: 'Notas obtenidas en tiempo real de fuentes públicas. Datos y logos pertenecen a sus dueños.',
+    madeBy: 'Hecho por',
+    ogLocale: 'es_ES',
+    numLocale: 'es',
+  },
+  en: {
+    srcLabel: {
+      imdb: 'IMDb', rt_critics: 'Rotten Tomatoes · Critics', rt_audience: 'Rotten Tomatoes · Audience',
+      metacritic: 'Metacritic', filmaffinity: 'FilmAffinity', letterboxd: 'Letterboxd', tmdb: 'TMDb',
+    },
+    titleSuffix: 'ratings & average',
+    avgOf: (n) => `average of ${n} sources`,
+    directedBy: 'Directed by',
+    series: '📺 Series',
+    min: 'min',
+    avgLabel: 'avg',
+    avgNote: (n, v) =>
+      `Arithmetic mean of ${n} source${n === 1 ? '' : 's'} normalized to a 0–10 scale` +
+      `${v ? `, with ${v} votes in total` : ''}.`,
+    votes: 'votes',
+    synopsis: 'Synopsis',
+    compare: '＋ Compare with others',
+    share: '🔗 Share',
+    shareCopied: '✓ Link copied',
+    where: 'Where to watch · JustWatch ↗',
+    back: '← Comparator',
+    jw: (title) => `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`,
+    footer: 'Ratings fetched live from public sources. Data and logos belong to their owners.',
+    madeBy: 'Made by',
+    ogLocale: 'en_US',
+    numLocale: 'en',
+  },
 };
 
 export async function onRequestGet(context) {
@@ -22,8 +76,18 @@ export async function onRequestGet(context) {
   const parsed = parseSlug(params.slug);
   if (!parsed) return new Response('Película no encontrada', { status: 404 });
 
-  // Caché edge de la ficha renderizada (compartida entre usuarios y bots).
-  const cacheKey = new Request(`${SITE_ORIGIN}/pelicula/${params.slug}`);
+  const url = new URL(request.url);
+  const qLang = url.searchParams.get('lang');
+  const accept = request.headers.get('Accept-Language') || '';
+  const lang =
+    qLang === 'es' || qLang === 'en'
+      ? qLang
+      : accept && !/(^|[,\s])es(-|[;,\s]|$)/i.test(accept)
+        ? 'en'
+        : 'es';
+
+  // Caché edge de la ficha renderizada, una copia por idioma.
+  const cacheKey = new Request(`${SITE_ORIGIN}/pelicula/${params.slug}?lang=${lang}`);
   const cache = caches.default;
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
@@ -36,7 +100,6 @@ export async function onRequestGet(context) {
     sug = (await searchImdb(parsed.title)).find((r) => r.imdbId === parsed.imdbId) || null;
   } catch (_) { /* la ficha funciona igual sin la sugerencia */ }
 
-  const url = new URL(request.url);
   const type = url.searchParams.get('type') || (sug && sug.type) || '';
   const isTv = /tv(Series|MiniSeries)/i.test(type);
 
@@ -57,10 +120,11 @@ export async function onRequestGet(context) {
   if (!meta.title && !data.ratings.length)
     return new Response('Película no encontrada', { status: 404 });
 
-  // Redirige al slug canónico (301) para que solo exista una URL por título.
+  // Redirige al slug canónico (301, conservando query) para que solo exista
+  // una URL por título.
   const canonicalSlug = slugify(meta.title || parsed.title, meta.year || parsed.year, parsed.imdbId);
   if (params.slug !== canonicalSlug) {
-    return Response.redirect(`${SITE_ORIGIN}/pelicula/${canonicalSlug}`, 301);
+    return Response.redirect(`${SITE_ORIGIN}/pelicula/${canonicalSlug}${url.search}`, 301);
   }
   const canonicalUrl = `${SITE_ORIGIN}/pelicula/${canonicalSlug}`;
 
@@ -74,33 +138,36 @@ export async function onRequestGet(context) {
     );
   }
 
-  const html = renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv });
+  const html = renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv, lang });
   const res = new Response(html, {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       // 1h en navegador, 24h en el edge: las notas cambian despacio.
       'Cache-Control': 'public, max-age=3600, s-maxage=86400',
+      Vary: 'Accept-Language',
     },
   });
   context.waitUntil(cache.put(cacheKey, res.clone()));
   return res;
 }
 
-function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv }) {
-  const title = meta.title || 'Película';
+function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv, lang }) {
+  const L = L10N[lang] || L10N.es;
+  const title = meta.title || (lang === 'es' ? 'Película' : 'Movie');
   const year = meta.year ? String(meta.year).slice(0, 4) : '';
   const avg = data.average;
   const directors = (meta.director || []).filter(Boolean);
   const genres = meta.genres || [];
   const votes = (data.ratings || []).reduce((a, r) => a + (r.votes || 0), 0);
+  const nf = (n) => Number(n).toLocaleString(L.numLocale);
 
   const titleFull = `${title}${year ? ` (${year})` : ''}`;
   const ratingBits = (data.ratings || [])
-    .map((r) => `${SRC_LABEL[r.key] || r.source} ${r.native}`)
+    .map((r) => `${L.srcLabel[r.key] || r.source} ${r.native}`)
     .join(' · ');
   const desc =
-    (avg != null ? `⭐ ${avg}/10 — media de ${data.sourceCount} fuentes. ` : '') +
-    (directors.length ? `Dirigida por ${directors.join(', ')}. ` : '') +
+    (avg != null ? `⭐ ${avg}/10 — ${L.avgOf(data.sourceCount)}. ` : '') +
+    (directors.length ? `${L.directedBy} ${directors.join(', ')}. ` : '') +
     (meta.plot ? meta.plot.slice(0, 160) : ratingBits);
 
   // JSON-LD Movie/TVSeries con AggregateRating: lo que Google necesita para
@@ -137,8 +204,8 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv }) {
     .map((r) => {
       const pct = Math.max(3, Math.min(100, r.normalized * 10));
       const inner = `
-        <div class="src"><span class="dot" style="background:${SRC_COLORS[r.key] || '#888'}"></span>${esc(SRC_LABEL[r.key] || r.source)}</div>
-        <div class="val">${esc(r.native)}${r.votes ? ` <small>(${Number(r.votes).toLocaleString('es')} votos)</small>` : ''}</div>
+        <div class="src"><span class="dot" style="background:${SRC_COLORS[r.key] || '#888'}"></span>${esc(L.srcLabel[r.key] || r.source)}</div>
+        <div class="val">${esc(r.native)}${r.votes ? ` <small>(${nf(r.votes)} ${L.votes})</small>` : ''}</div>
         <div class="meter"><i style="width:${pct}%;background:${SRC_COLORS[r.key] || '#888'}"></i></div>`;
       return r.url
         ? `<a class="stat" href="${esc(r.url)}" target="_blank" rel="noopener nofollow">${inner}</a>`
@@ -147,15 +214,15 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv }) {
     .join('');
 
   const bits = [];
-  if (isTv) bits.push('📺 Serie');
-  if (meta.runtime) bits.push(`⏱ ${meta.runtime} min`);
+  if (isTv) bits.push(L.series);
+  if (meta.runtime) bits.push(`⏱ ${meta.runtime} ${L.min}`);
   if (meta.contentRating) bits.push(esc(meta.contentRating));
   if (meta.country) bits.push(esc(meta.country.split(',')[0].trim()));
 
   const avgColor = avg == null ? '#52525b' : avg >= 7 ? '#22c55e' : avg >= 5 ? '#eab308' : '#ef4444';
 
   return `<!DOCTYPE html>
-<html lang="es">
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
 
@@ -169,20 +236,23 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv }) {
   </script>
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(titleFull)} — notas y media | CineRank</title>
+  <title>${esc(titleFull)} — ${L.titleSuffix} | CineRank</title>
   <meta name="description" content="${esc(desc)}">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="${canonicalUrl}">
+  <link rel="alternate" hreflang="es" href="${canonicalUrl}?lang=es">
+  <link rel="alternate" hreflang="en" href="${canonicalUrl}?lang=en">
+  <link rel="alternate" hreflang="x-default" href="${canonicalUrl}">
 
   <meta property="og:type" content="${isTv ? 'video.tv_show' : 'video.movie'}">
   <meta property="og:site_name" content="CineRank">
-  <meta property="og:title" content="${esc(titleFull)} — ${avg != null ? `⭐ ${avg}/10` : 'notas'} | CineRank">
+  <meta property="og:title" content="${esc(titleFull)} — ${avg != null ? `⭐ ${avg}/10` : L.titleSuffix} | CineRank">
   <meta property="og:description" content="${esc(desc)}">
   <meta property="og:url" content="${canonicalUrl}">
   ${meta.poster ? `<meta property="og:image" content="${esc(meta.poster)}">` : `<meta property="og:image" content="${SITE_ORIGIN}/og.png">`}
-  <meta property="og:locale" content="es_ES">
+  <meta property="og:locale" content="${L.ogLocale}">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="${esc(titleFull)} — ${avg != null ? `⭐ ${avg}/10` : 'notas'} | CineRank">
+  <meta name="twitter:title" content="${esc(titleFull)} — ${avg != null ? `⭐ ${avg}/10` : L.titleSuffix} | CineRank">
   <meta name="twitter:description" content="${esc(desc)}">
   ${meta.poster ? `<meta name="twitter:image" content="${esc(meta.poster)}">` : ''}
 
@@ -248,7 +318,7 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv }) {
     .plot h2 { font-size: 0.78rem; font-family: var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.4rem; }
     .plot p { color: var(--text-muted); font-size: 0.92rem; }
     .cta-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-    .cta { font-family: var(--mono); font-size: 0.78rem; padding: 0.6rem 1.1rem; border-radius: 50px; border: 1px solid var(--border); color: var(--text-muted); transition: all 0.2s; }
+    .cta { font-family: var(--mono); font-size: 0.78rem; padding: 0.6rem 1.1rem; border-radius: 50px; border: 1px solid var(--border); color: var(--text-muted); transition: all 0.2s; cursor: pointer; background: none; }
     .cta:hover { color: var(--text); border-color: var(--accent); background: var(--accent-glow); }
     .cta.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
     .cta.primary:hover { filter: brightness(1.15); }
@@ -260,47 +330,64 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv }) {
 <body>
   <header>
     <div class="wrap nav">
-      <a class="brand" href="/"><span>🎬</span> Cine<b>Rank</b></a>
-      <a class="back" href="/">← Comparador</a>
+      <a class="brand" href="/?lang=${lang}"><span>🎬</span> Cine<b>Rank</b></a>
+      <a class="back" href="/?lang=${lang}">${L.back}</a>
     </div>
   </header>
 
   <main class="wrap">
     <article class="movie">
       <div class="poster">
-        ${meta.poster ? `<img src="${esc(meta.poster)}" alt="Póster de ${esc(title)}">` : '<div class="noimg">🎬</div>'}
+        ${meta.poster ? `<img src="${esc(meta.poster)}" alt="${lang === 'es' ? 'Póster de' : 'Poster of'} ${esc(title)}">` : '<div class="noimg">🎬</div>'}
       </div>
       <div>
         <h1>${esc(title)} ${year ? `<span>(${year})</span>` : ''}</h1>
         ${bits.length ? `<div class="meta-line">${bits.join(' · ')}</div>` : ''}
-        ${directors.length ? `<div class="director">🎬 Dirigida por <b>${esc(directors.join(', '))}</b></div>` : ''}
+        ${directors.length ? `<div class="director">🎬 ${L.directedBy} <b>${esc(directors.join(', '))}</b></div>` : ''}
         ${genres.length ? `<div class="chips">${genres.map((g) => `<span class="chip">${esc(g)}</span>`).join('')}</div>` : ''}
 
         <div class="avg-row">
           <div class="avg-badge">
             <span class="n">${avg != null ? `${avg.toFixed(1)}<small>/10</small>` : '—'}</span>
-            <span class="l">media</span>
+            <span class="l">${L.avgLabel}</span>
           </div>
-          <div class="avg-note">Media aritmética de ${data.sourceCount} fuente${data.sourceCount === 1 ? '' : 's'} normalizadas a escala 0–10${votes ? `, con ${votes.toLocaleString('es')} votos en total` : ''}.</div>
+          <div class="avg-note">${L.avgNote(data.sourceCount, votes ? nf(votes) : null)}</div>
         </div>
 
         <div class="ratings">${statCards}</div>
 
-        ${meta.plot ? `<section class="plot"><h2>Sinopsis</h2><p>${esc(meta.plot)}</p></section>` : ''}
+        ${meta.plot ? `<section class="plot"><h2>${L.synopsis}</h2><p>${esc(meta.plot)}</p></section>` : ''}
 
         <div class="cta-row">
-          <a class="cta primary" href="/?add=${canonicalSlug}">＋ Comparar con otras</a>
+          <a class="cta primary" href="/?add=${canonicalSlug}&lang=${lang}">${L.compare}</a>
+          <button class="cta" id="shareBtn">${L.share}</button>
           <a class="cta" href="https://www.imdb.com/title/${data.imdbId}/" target="_blank" rel="noopener nofollow">IMDb ↗</a>
-          <a class="cta" href="https://www.justwatch.com/es/buscar?q=${encodeURIComponent(title)}" target="_blank" rel="noopener nofollow">¿Dónde verla? · JustWatch ↗</a>
+          <a class="cta" href="${L.jw(title)}" target="_blank" rel="noopener nofollow">${L.where}</a>
         </div>
       </div>
     </article>
   </main>
 
   <footer class="wrap">
-    <p>Notas obtenidas en tiempo real de fuentes públicas. Datos y logos pertenecen a sus dueños.</p>
-    <p>Hecho por <a href="https://github.com/dogcalas" target="_blank" rel="noopener">Abraham Calás</a> · <a href="/">CineRank</a></p>
+    <p>${L.footer}</p>
+    <p>${L.madeBy} <a href="https://github.com/dogcalas" target="_blank" rel="noopener">Abraham Calás</a> · <a href="/?lang=${lang}">CineRank</a></p>
   </footer>
+
+  <script>
+    document.getElementById('shareBtn').addEventListener('click', async () => {
+      const link = ${JSON.stringify(canonicalUrl)} + '?lang=${lang}';
+      if (navigator.share) {
+        try { await navigator.share({ title: document.title, url: link }); return; } catch (_) {}
+      }
+      try {
+        await navigator.clipboard.writeText(link);
+        const b = document.getElementById('shareBtn');
+        const old = b.textContent;
+        b.textContent = ${JSON.stringify(L10N[lang].shareCopied)};
+        setTimeout(() => { b.textContent = old; }, 2000);
+      } catch (_) { prompt('URL', link); }
+    });
+  </script>
 </body>
 </html>`;
 }
