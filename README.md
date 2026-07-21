@@ -20,13 +20,33 @@ orígenes de navegador). Las funciones de `functions/` corren **en el servidor
 
 ```
 index.html                       # la app (UI)
+robots.txt / og.png / og.svg     # SEO: robots + imagen para compartir (y su fuente)
 functions/api/movies/search.js   # GET /api/movies/search?q=<título>
 functions/api/movies/ratings.js  # GET /api/movies/ratings?imdb=tt…&title=…&year=…
-functions/api/movies/_lib.js     # scrapers + normalización + media
+functions/api/movies/_lib.js     # scrapers + normalización + media + slugs
+functions/pelicula/[slug].js     # GET /pelicula/<título>-<año>-<ttID>: ficha SSR
+functions/c/[list].js            # GET /c/<slug>,<slug>: comparación compartible
+functions/sitemap.xml.js         # GET /sitemap.xml (portada + fichas visitadas)
 ```
 
 Cada fuente se consulta en su propio `try/catch` con timeout: si una cae o
 cambia su HTML, simplemente desaparece de la media, no rompe la respuesta.
+
+## SEO
+
+- **Ficha por título** (`/pelicula/origen-2010-tt1375666`): HTML renderizado en
+  el edge con OG/Twitter propios (el enlace muestra póster y nota al
+  compartirse) y JSON-LD `Movie`/`TVSeries` con `AggregateRating` — lo que
+  Google usa para pintar estrellas en sus resultados. Redirige 301 al slug
+  canónico y se cachea 24 h en el edge.
+- **Comparaciones compartibles** (`/c/slug,slug`): sirven la SPA con el `<head>`
+  reescrito ("X vs Y — ¿cuál ver?"); el cliente carga esas películas al abrir.
+  `noindex` para no diluir el SEO con combinaciones infinitas.
+- **`sitemap.xml`**: portada + todas las fichas visitadas. Para que recuerde las
+  fichas necesita un KV: crea un namespace y vincúlalo al proyecto de Pages como
+  **`CINERANK_KV`** (Settings → Functions → KV namespace bindings). Sin KV el
+  sitemap lista solo la portada; las fichas se descubren igualmente por los
+  enlaces internos.
 
 ## Fuentes
 

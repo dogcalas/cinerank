@@ -103,6 +103,42 @@ export async function renderViaCf(
 
 // ---------- text utilities ----------
 
+// Dominio canónico del sitio: canonicals, OG y sitemap apuntan siempre aquí
+// aunque la petición llegue por cinerank.pages.dev.
+export const SITE_ORIGIN = 'https://cinerank.app';
+
+export function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Slug canónico de la ficha: "origen-2010-tt1375666". El imdbId al final es
+// lo único que se usa para resolver; el resto es legibilidad/SEO.
+export function slugify(title, year, imdbId) {
+  const base = (title || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/g, '');
+  return [base, year, imdbId].filter(Boolean).join('-');
+}
+
+// Descompone un slug (o lista de ellos) en sus partes.
+export function parseSlug(slug) {
+  const m = String(slug || '').match(/(tt\d+)\/?$/);
+  if (!m) return null;
+  const imdbId = m[1];
+  let rest = slug.slice(0, slug.length - m[0].length).replace(/-+$/, '');
+  let year = '';
+  const y = rest.match(/-((?:19|20)\d{2})$/);
+  if (y) { year = y[1]; rest = rest.slice(0, -y[0].length); }
+  const title = rest.replace(/-+/g, ' ').trim();
+  return { imdbId, year, title };
+}
+
 export function normalizeTitle(s) {
   return (s || '')
     .toLowerCase()
