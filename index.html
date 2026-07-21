@@ -235,13 +235,17 @@
     }
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
     .card.best { border-color: rgba(34,197,94,0.4); box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 12px 40px rgba(0,0,0,0.35); }
-    .card .best-tag { position: absolute; top: 10px; left: 10px; z-index: 3; background: var(--good); color: #05130a; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; letter-spacing: 0.05em; }
-    .card .rm, .card .rf { position: absolute; top: 10px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s; }
+    /* La esquina superior izquierda la ocupa el botón compartir; la etiqueta
+       🏆 de la mejor valorada se desplaza a su derecha. */
+    .card .best-tag { position: absolute; top: 13px; left: 46px; z-index: 3; background: var(--good); color: #05130a; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; letter-spacing: 0.05em; }
+    .card .rm, .card .rf, .card .shr { position: absolute; top: 10px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,0.55); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: all 0.2s; }
     .card .rm { right: 10px; }
     .card .rm:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
     .card .rf { right: 44px; font-size: 0.9rem; }
     .card .rf:hover { background: var(--accent-glow); color: var(--text); border-color: var(--accent); }
     .card .rf.spinning { animation: rot 0.8s linear infinite; pointer-events: none; }
+    .card .shr { left: 10px; font-size: 0.8rem; }
+    .card .shr:hover { background: var(--accent-glow); color: var(--text); border-color: var(--accent); }
 
     /* Altura fija (no proporcional al ancho): así el cuerpo de la tarjeta
        dispone siempre del mismo espacio y el tamaño total es estable. */
@@ -406,9 +410,6 @@
           <button class="btn" id="viewBtn" data-i18n="view">▤ Tabla</button>
         </div>
         <div class="tool-group">
-          <button class="btn btn-share" id="shareBtn" data-i18n="share">🔗 Compartir</button>
-        </div>
-        <div class="tool-group">
           <button class="btn btn-danger" id="clearBtn" data-i18n="clear">Vaciar todo</button>
         </div>
       </div>
@@ -422,6 +423,7 @@
         <small data-i18n="winner">Mejor valorada</small>
         <div id="winnerName"></div>
       </div>
+      <button class="btn btn-share" id="shareBtn" data-i18n="share">🔗 Compartir</button>
     </div>
 
     <div class="grid" id="grid"></div>
@@ -490,7 +492,6 @@
       share: { es: '🔗 Compartir', en: '🔗 Share' },
       shareCopied: { es: 'Enlace copiado: quien lo abra verá esta misma comparación', en: 'Link copied: anyone opening it sees this same comparison' },
       shareFilmCopied: { es: 'Enlace de la ficha copiado', en: 'Film page link copied' },
-      ficha: { es: 'Ficha ↗', en: 'Details ↗' },
     };
     const SRC_COLORS = {
       imdb: '#f5c518', rt_critics: '#fa320a', rt_audience: '#fcb320',
@@ -807,6 +808,7 @@
           ${isBest ? `<span class="best-tag">🏆 ${t('winner')}</span>` : ''}
           <button class="rf" data-rf="${m.imdbId}" title="${t('refresh')}">↻</button>
           <button class="rm" data-rm="${m.imdbId}" title="Quitar">✕</button>
+          <button class="shr" data-shr="${slugOf(m)}" title="${t('share').replace('🔗 ', '')}">🔗</button>
           <div class="poster-wrap">
             ${meta.poster ? `<img class="bg" src="${meta.poster}" alt="" aria-hidden="true"><img class="fg" src="${meta.poster}" alt="${esc(meta.title || '')}">` : '<div class="noimg">🎬</div>'}
             <div class="overlay"><div class="title"><a href="${fichaUrl}">${esc(meta.title || '')} ${meta.year ? `<span>(${meta.year})</span>` : ''}</a></div></div>
@@ -824,8 +826,6 @@
                 <div class="snippet">${esc(meta.plot)}</div>
               </button>` : ''}</div>
             <div class="card-foot">
-              <a href="${fichaUrl}">${t('ficha')}</a>
-              <button data-shr="${slugOf(m)}" title="${t('share').replace('🔗 ', '')}">🔗</button>
               <a href="https://www.imdb.com/title/${m.imdbId}/" target="_blank" rel="noopener">IMDb ↗</a>
               <a href="${jwUrl(meta.title)}" target="_blank" rel="noopener" title="${t('jwTitle')}">JustWatch ↗</a>
             </div>
