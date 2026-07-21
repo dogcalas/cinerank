@@ -187,7 +187,11 @@
 
     /* ---------- toolbar ---------- */
     .toolbar { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center; justify-content: space-between; margin: 2.5rem 0 1rem; }
-    .toolbar .count { font-family: var(--mono); font-size: 0.8rem; color: var(--text-muted); }
+    .toolbar .count-row { font-family: var(--mono); font-size: 0.8rem; color: var(--text-dim); display: flex; align-items: baseline; gap: 0.45rem; }
+    .toolbar .count { color: var(--text-muted); }
+    /* "Vaciar todo" como texto junto al contador, no como botón */
+    .clear-link { font-family: var(--mono); font-size: 0.8rem; color: var(--text-muted); background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; transition: color 0.2s; }
+    .clear-link:hover { color: #fca5a5; }
     /* Grupos separados con divisor: filtros/vista · compartir · zona de peligro */
     .toolbar .actions { display: flex; flex-wrap: wrap; align-items: center; row-gap: 0.5rem; }
     .tool-group { display: flex; gap: 0.5rem; flex-wrap: wrap; padding: 0 0.9rem; border-left: 1px solid var(--border); }
@@ -402,15 +406,12 @@
     </section>
 
     <div class="toolbar" id="toolbar" style="display:none">
-      <span class="count" id="count"></span>
+      <span class="count-row"><span class="count" id="count"></span> · <button class="clear-link" id="clearBtn" data-i18n="clear">Vaciar todo</button></span>
       <div class="actions">
         <div class="tool-group">
           <button class="btn" id="sortBtn" data-i18n="sort">↑ Ordenar por media</button>
           <button class="btn" id="sortTimeBtn" data-i18n="sortTime">⏱ Ordenar por duración</button>
           <button class="btn" id="viewBtn" data-i18n="view">▤ Tabla</button>
-        </div>
-        <div class="tool-group">
-          <button class="btn btn-danger" id="clearBtn" data-i18n="clear">Vaciar todo</button>
         </div>
       </div>
     </div>
