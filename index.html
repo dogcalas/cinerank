@@ -523,6 +523,15 @@
     let lang = localStorage.getItem('lang') || ((navigator.language || 'es').startsWith('es') ? 'es' : 'en');
     const t = (k, ...a) => { const v = I18N[k] ? I18N[k][lang] : k; return typeof v === 'function' ? v(...a) : v; };
 
+    // ---------- analytics ----------
+    // Envoltorio fino sobre gtag: nunca lanza, no-op si un adblocker lo mató.
+    // Los nombres/parámetros son la taxonomía de GA4 del sitio — si añades un
+    // evento nuevo, registra sus parámetros como dimensiones personalizadas
+    // en GA4 (Admin → Definiciones personalizadas) para poder verlos en informes.
+    function track(name, params) {
+      try { if (window.gtag) window.gtag('event', name, params || {}); } catch (_) {}
+    }
+
     // ---------- state ----------
     let movies = load();              // [{imdbId, meta, ratings, average, sourceCount}]
     let sortMode = 'none';            // 'none' | 'avg' | 'runtime'
@@ -551,7 +560,7 @@
       $('viewBtn').innerHTML = tableMode ? I18N.viewCards[l] : I18N.view[l];
       render();
     }
-    $('langToggle').addEventListener('click', () => setLang(lang === 'es' ? 'en' : 'es'));
+    $('langToggle').addEventListener('click', () => { track('change_language', { to_lang: lang === 'es' ? 'en' : 'es' }); setLang(lang === 'es' ? 'en' : 'es'); });
 
     // ---------- search ----------
     const searchInput = $('search'), suggest = $('suggest'), searchbox = $('searchbox');
@@ -581,6 +590,8 @@
         const res = await fetch(`/api/movies/search?q=${encodeURIComponent(q)}`);
         const data = await res.json();
         currentResults = data.results || [];
+        // "search" es el evento recomendado de GA4; search_term da "lo más buscado".
+        track('search', { search_term: q.toLowerCase(), results: currentResults.length });
         renderSuggest(currentResults);
       } catch {
         currentResults = [];
@@ -608,7 +619,10 @@
     }
 
     // ---------- add a movie ----------
-    async function pick(item) {
+    // `origin` dice DESDE DÓNDE llegó el título a la comparación: 'search',
+    // 'top5_movie'/'top5_tv', 'shared_link' (/c/...) o 'film_page' (?add=).
+    // Es la dimensión que separa uso orgánico de tráfico compartido.
+    async function pick(item, origin = 'search') {
       closeSuggest();
       searchInput.value = '';
       if (movies.some(m => m.imdbId === item.imdbId)) { flash(t('already')); return; }
@@ -635,6 +649,15 @@
             ([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)));
           data.meta = { ...movies[idx].meta, ...filled };
           if (idx >= 0) movies[idx] = data;
+          // El evento núcleo del producto: qué se compara y desde dónde.
+          const yr = String(data.meta.year || item.year || '').match(/\d{4}/);
+          track('add_movie', {
+            movie_title: (data.meta.title || item.title) + (yr ? ` (${yr[0]})` : ''),
+            imdb_id: item.imdbId,
+            movie_type: /tv/i.test(data.meta.type || '') ? 'tv' : 'movie',
+            added_from: origin,
+            comparison_size: movies.length,
+          });
         }
       } catch (e) {
         const idx = movies.findIndex(m => m.imdbId === skeletonId);
@@ -644,18 +667,23 @@
       save(); render();
     }
 
-    function remove(imdbId) { movies = movies.filter(m => m.imdbId !== imdbId); save(); render(); }
+    function remove(imdbId) {
+      movies = movies.filter(m => m.imdbId !== imdbId);
+      track('remove_movie', { imdb_id: imdbId, comparison_size: movies.length });
+      save(); render();
+    }
 
     // Añade a la comparación el top 5 del día (tendencias de TMDb).
     async function addTop(kind, btn) {
       btn.disabled = true;
       flash(t('topLoading'));
+      track('load_top5', { kind });
       try {
         const res = await fetch(`/api/movies/top?kind=${kind}`);
         const data = await res.json();
         if (data.error || !data.results || !data.results.length) { flash(data.error || t('noResults')); return; }
         movies = []; save(); render(); // el top sustituye la comparación actual
-        await Promise.all(data.results.map(r => pick(r)));
+        await Promise.all(data.results.map(r => pick(r, `top5_${kind}`)));
       } catch (e) {
         flash(String(e));
       } finally {
@@ -681,6 +709,7 @@
         const res = await fetch(url, { cache: 'no-store' });
         const data = await res.json();
         if (data.error || !data.ratings) { flash(data.error || t('refreshFail')); return; }
+        track('refresh_ratings', { imdb_id: imdbId });
         const filled = Object.fromEntries(Object.entries(data.meta || {}).filter(
           ([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)));
         data.meta = { ...old.meta, ...filled };
@@ -726,6 +755,7 @@
       bar.querySelectorAll('[data-g]').forEach(ch => ch.addEventListener('click', () => {
         const g = ch.dataset.g;
         genreSel.has(g) ? genreSel.delete(g) : genreSel.add(g);
+        if (genreSel.has(g)) track('filter_genre', { genre: g });
         render();
       }));
     }
@@ -753,8 +783,18 @@
       // Toda la tarjeta abre la ficha, salvo que el clic caiga en un botón o enlace.
       grid.querySelectorAll('[data-ficha]').forEach(c => c.addEventListener('click', (e) => {
         if (e.target.closest('a, button')) return;
+        track('open_film_page', { imdb_id: c.dataset.imdb || '', from: 'card' });
         location.href = c.dataset.ficha;
       }));
+      // Clic en enlaces salientes de las tarjetas (fuentes de notas, IMDb, JustWatch):
+      // dice qué fuente le importa a la gente. Delegado para sobrevivir a re-renders.
+      if (!grid.dataset.outWired) {
+        grid.dataset.outWired = '1';
+        grid.addEventListener('click', (e) => {
+          const a = e.target.closest('a[data-src], a[data-out]');
+          if (a) track('click_source', { source: a.dataset.src || a.dataset.out });
+        });
+      }
     }
 
     function card(m, best) {
@@ -781,7 +821,7 @@
             <div class="val">${r.native}</div>
             <div class="meter"><i style="width:${pct}%;background:${color}"></i></div>`;
         return r.url
-          ? `<a class="stat" href="${r.url}" target="_blank" rel="noopener">${inner}</a>`
+          ? `<a class="stat" data-src="${key}" href="${r.url}" target="_blank" rel="noopener">${inner}</a>`
           : `<div class="stat">${inner}</div>`;
       }).join('');
 
@@ -806,7 +846,7 @@
       const avg = m.average;
       const fichaUrl = fichaUrlOf(m);
       return `
-        <div class="card ${isBest ? 'best' : ''}" data-ficha="${fichaUrl}">
+        <div class="card ${isBest ? 'best' : ''}" data-ficha="${fichaUrl}" data-imdb="${m.imdbId}">
           ${isBest ? `<span class="best-tag">🏆 ${t('winner')}</span>` : ''}
           <button class="rf" data-rf="${m.imdbId}" title="${t('refresh')}">↻</button>
           <button class="rm" data-rm="${m.imdbId}" title="Quitar">✕</button>
@@ -828,8 +868,8 @@
                 <div class="snippet">${esc(meta.plot)}</div>
               </button>` : ''}</div>
             <div class="card-foot">
-              <a href="https://www.imdb.com/title/${m.imdbId}/" target="_blank" rel="noopener">IMDb ↗</a>
-              <a href="${jwUrl(meta.title)}" target="_blank" rel="noopener" title="${t('jwTitle')}">JustWatch ↗</a>
+              <a href="https://www.imdb.com/title/${m.imdbId}/" data-out="imdb_page" target="_blank" rel="noopener">IMDb ↗</a>
+              <a href="${jwUrl(meta.title)}" data-out="justwatch" target="_blank" rel="noopener" title="${t('jwTitle')}">JustWatch ↗</a>
             </div>
           </div>
         </div>`;
@@ -861,17 +901,20 @@
     // ---------- toolbar actions ----------
     function setSort(mode) {
       sortMode = sortMode === mode ? 'none' : mode;
+      if (sortMode !== 'none') track('sort_comparison', { mode: sortMode });
       $('sortBtn').classList.toggle('on', sortMode === 'avg');
       $('sortTimeBtn').classList.toggle('on', sortMode === 'runtime');
       render();
     }
     $('sortBtn').addEventListener('click', () => setSort('avg'));
     $('sortTimeBtn').addEventListener('click', () => setSort('runtime'));
-    $('viewBtn').addEventListener('click', () => { tableMode = !tableMode; $('viewBtn').innerHTML = tableMode ? I18N.viewCards[lang] : I18N.view[lang]; $('viewBtn').classList.toggle('on', tableMode); render(); });
-    $('clearBtn').addEventListener('click', () => { if (movies.length && confirm(lang === 'es' ? '¿Vaciar la comparación?' : 'Clear the comparison?')) { movies = []; save(); render(); } });
+    $('viewBtn').addEventListener('click', () => { tableMode = !tableMode; track('toggle_view', { view: tableMode ? 'table' : 'cards' }); $('viewBtn').innerHTML = tableMode ? I18N.viewCards[lang] : I18N.view[lang]; $('viewBtn').classList.toggle('on', tableMode); render(); });
+    $('clearBtn').addEventListener('click', () => { if (movies.length && confirm(lang === 'es' ? '¿Vaciar la comparación?' : 'Clear the comparison?')) { track('clear_comparison', { comparison_size: movies.length }); movies = []; save(); render(); } });
     $('shareBtn').addEventListener('click', () => {
       const ready = movies.filter(m => !m.loading);
       if (!ready.length) return;
+      // "share" es el evento recomendado de GA4 (method/content_type/item_id).
+      track('share', { content_type: 'comparison', item_id: ready.map(x => x.imdbId).join(','), item_count: ready.length });
       shareLink(`${location.origin}/c/${ready.map(slugOf).join(',')}?lang=${lang}`, t('shareCopied'));
     });
 
@@ -902,7 +945,10 @@
       try { await navigator.clipboard.writeText(link); flash(copiedMsg); }
       catch { prompt('URL', link); }
     }
-    const shareFilm = (slug) => shareLink(`${location.origin}/pelicula/${slug}?lang=${lang}`, t('shareFilmCopied'));
+    const shareFilm = (slug) => {
+      track('share', { content_type: 'film', item_id: slug });
+      return shareLink(`${location.origin}/pelicula/${slug}?lang=${lang}`, t('shareFilmCopied'));
+    };
     function parseSlug(slug) {
       const mm = String(slug || '').match(/(tt\d+)\/?$/);
       if (!mm) return null;
@@ -926,6 +972,7 @@
     function openPlot(imdbId) {
       const m = movies.find(x => x.imdbId === imdbId);
       if (!m || !m.meta || !m.meta.plot) return;
+      track('view_plot', { imdb_id: imdbId });
       $('plotTitle').textContent = `${m.meta.title || ''}${m.meta.year ? ' (' + m.meta.year + ')' : ''}`;
       $('plotText').textContent = m.meta.plot;
       $('plotModal').classList.add('open');
@@ -1002,8 +1049,9 @@
       if (mC) {
         const items = decodeURIComponent(mC[1]).split(',').map(parseSlug).filter(Boolean);
         if (items.length) {
+          track('open_shared_comparison', { item_count: items.length });
           movies = []; save(); render();
-          items.forEach(it => pick(it));
+          items.forEach(it => pick(it, 'shared_link'));
         }
         return;
       }
@@ -1011,7 +1059,7 @@
       if (add) {
         const it = parseSlug(add);
         history.replaceState({}, '', '/');
-        if (it && !movies.some(m => m.imdbId === it.imdbId)) pick(it);
+        if (it && !movies.some(m => m.imdbId === it.imdbId)) pick(it, 'film_page');
       }
     })();
   })();

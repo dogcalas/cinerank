@@ -233,6 +233,11 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv, lang }) {
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
     gtag('config', 'G-EJK0BW1Z40');
+    // Ficha vista con título legible (page_view solo da el slug de la URL).
+    gtag('event', 'view_film', {
+      movie_title: ${JSON.stringify(`${title}${year ? ` (${year})` : ""}`)},
+      imdb_id: ${JSON.stringify(data.imdbId)},
+    });
   </script>
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -359,10 +364,10 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv, lang }) {
         ${meta.plot ? `<section class="plot"><h2>${L.synopsis}</h2><p>${esc(meta.plot)}</p></section>` : ''}
 
         <div class="cta-row">
-          <a class="cta primary" href="/?add=${canonicalSlug}&lang=${lang}">${L.compare}</a>
+          <a class="cta primary" id="compareCta" href="/?add=${canonicalSlug}&lang=${lang}">${L.compare}</a>
           <button class="cta" id="shareBtn">${L.share}</button>
-          <a class="cta" href="https://www.imdb.com/title/${data.imdbId}/" target="_blank" rel="noopener nofollow">IMDb ↗</a>
-          <a class="cta" href="${L.jw(title)}" target="_blank" rel="noopener nofollow">${L.where}</a>
+          <a class="cta" data-out="imdb_page" href="https://www.imdb.com/title/${data.imdbId}/" target="_blank" rel="noopener nofollow">IMDb ↗</a>
+          <a class="cta" data-out="justwatch" href="${L.jw(title)}" target="_blank" rel="noopener nofollow">${L.where}</a>
         </div>
       </div>
     </article>
@@ -374,7 +379,18 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv, lang }) {
   </footer>
 
   <script>
+    function track(name, params) {
+      try { if (window.gtag) window.gtag('event', name, params || {}); } catch (_) {}
+    }
+    // CTA "comparar": el paso ficha → comparador (el funnel inverso de ?add=).
+    document.getElementById('compareCta').addEventListener('click', () => {
+      track('click_compare_cta', { imdb_id: ${JSON.stringify(data.imdbId)} });
+    });
+    document.querySelectorAll('a[data-out]').forEach((a) => {
+      a.addEventListener('click', () => track('click_source', { source: a.dataset.out }));
+    });
     document.getElementById('shareBtn').addEventListener('click', async () => {
+      track('share', { content_type: 'film', item_id: ${JSON.stringify(canonicalSlug)} });
       const link = ${JSON.stringify(canonicalUrl)} + '?lang=${lang}';
       if (navigator.share) {
         try { await navigator.share({ title: document.title, url: link }); return; } catch (_) {}
