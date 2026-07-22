@@ -284,8 +284,13 @@
        (padding-right para no chocar con el círculo de la media) */
     .meta-line { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.6rem; padding-right: 70px; flex-shrink: 0; }
     /* tags: máximo 2 filas; si hay más, scroll */
-    .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; max-height: 56px; overflow-y: auto; flex-shrink: 0; scrollbar-width: thin; }
+    /* Una sola fila que crece a la derecha con scroll horizontal invisible
+       (antes: flex-wrap a 2 filas + barra vertical visible). Los chips no
+       se encogen ni parten su texto. */
+    .chips { display: flex; flex-wrap: nowrap; gap: 0.4rem; margin-bottom: 0.9rem; overflow-x: auto; overflow-y: hidden; flex-shrink: 0; scrollbar-width: none; -ms-overflow-style: none; }
+    .chips::-webkit-scrollbar { display: none; }
     .chip { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); background: var(--bg-glass); border: 1px solid var(--border); padding: 0.2rem 0.55rem; border-radius: 50px; }
+    .chips .chip { flex-shrink: 0; white-space: nowrap; }
     .chip.g { color: #c4b5fd; border-color: rgba(139,92,246,0.3); }
 
     /* Stats compactas: rejilla de 2 por fila en vez de barras a lo ancho. */
