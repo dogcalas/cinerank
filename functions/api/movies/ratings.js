@@ -3,6 +3,26 @@
 // & TMDb when API keys are configured) and returns metadata + a /10 average.
 import { aggregate, json } from './_lib.js';
 
+// Versión del esquema de la respuesta de aggregate() (ver _lib.js `version`).
+// Va en la clave del KV: al subirla, las entradas viejas quedan huérfanas y
+// expiran solas, así un cambio de formato no sirve datos con la forma antigua.
+const KV_SCHEMA = 'v3';
+const DAY = 86400; // 1 día
+const YEAR = 31536000; // 1 año
+
+// TTL del KV según la antigüedad del título. Las pelis/series de años pasados
+// casi no cambian sus notas → 1 año. Las del año en curso (o series en emisión,
+// "2016–") todavía se mueven → 1 día. Sin año conocido, jugamos seguro con 1 día.
+function kvTtlFor(meta) {
+  const nowYear = new Date().getUTCFullYear();
+  const ys = String((meta && meta.year) || '').trim();
+  const ongoing = /[–-]\s*$/.test(ys); // rango abierto: serie en emisión
+  const nums = ys.match(/\d{4}/g);
+  const latest = nums ? Math.max(...nums.map(Number)) : null;
+  if (ongoing || latest == null || latest >= nowYear) return DAY;
+  return YEAR;
+}
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const p = new URL(request.url).searchParams;
@@ -26,15 +46,40 @@ export async function onRequestGet(context) {
   const cacheKey = new Request(canonical.toString());
   const cache = caches.default;
 
+  // Capa KV (opcional): sobrevive a despliegues y dura mucho más que el edge.
+  // Si el binding RATINGS_KV no está configurado, todo sigue igual que antes.
+  const KV = env && env.RATINGS_KV;
+  const kvKey = `r:${KV_SCHEMA}:${imdbId}:${type || 'x'}`;
+
   if (!fresh) {
     const hit = await cache.match(cacheKey);
     if (hit) return hit;
+    // Miss en el edge → probamos KV antes de rascar todas las fuentes.
+    if (KV) {
+      try {
+        const cached = await KV.get(kvKey, { type: 'json' });
+        if (cached) {
+          const resp = json(cached); // Cache-Control 6h → repuebla navegador + edge
+          context.waitUntil(cache.put(cacheKey, resp.clone()));
+          return resp;
+        }
+      } catch (_) {
+        // KV caído/no disponible: seguimos al camino normal sin romper nada.
+      }
+    }
   }
   try {
     const data = await aggregate({ imdbId, title, year, env, fresh, type });
     const cacheable = json(data); // Cache-Control 6h por defecto
     // Un "recalcular" también refresca la copia del edge para el resto.
     context.waitUntil(cache.put(cacheKey, cacheable.clone()));
+    // Persistimos en KV solo lo que encontró algo (no cacheamos "sin fuentes"
+    // durante un año). El TTL depende de la antigüedad del título.
+    if (KV && data && data.sourceCount > 0) {
+      context.waitUntil(
+        KV.put(kvKey, JSON.stringify(data), { expirationTtl: kvTtlFor(data.meta) })
+      );
+    }
     return fresh ? json(data, 200, { 'Cache-Control': 'no-store' }) : cacheable;
   } catch (e) {
     return json({ error: `No se pudieron obtener las evaluaciones: ${e}` }, 502);
