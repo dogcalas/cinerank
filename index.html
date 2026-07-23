@@ -632,14 +632,17 @@
     // `origin` dice DESDE DÓNDE llegó el título a la comparación: 'search',
     // 'top5_movie'/'top5_tv', 'shared_link' (/c/...) o 'film_page' (?add=).
     // Es la dimensión que separa uso orgánico de tráfico compartido.
-    async function pick(item, origin = 'search') {
+    async function pick(item, origin = 'search', atFront = true) {
       closeSuggest();
       searchInput.value = '';
       if (movies.some(m => m.imdbId === item.imdbId)) { flash(t('already')); return; }
 
-      // optimistic skeleton card
+      // optimistic skeleton card. Los añadidos manualmente van ARRIBA (atFront)
+      // para verlos sin bajar; el top-5 y los enlaces compartidos conservan su
+      // orden de origen (atFront=false → al final).
       const skeletonId = item.imdbId;
-      movies.push({ imdbId: skeletonId, loading: true, meta: { title: item.title, year: item.year, poster: item.poster, type: item.type }, ratings: [], average: null });
+      const skeleton = { imdbId: skeletonId, loading: true, meta: { title: item.title, year: item.year, poster: item.poster, type: item.type }, ratings: [], average: null };
+      if (atFront) movies.unshift(skeleton); else movies.push(skeleton);
       render();
 
       try {
@@ -693,7 +696,7 @@
         const data = await res.json();
         if (data.error || !data.results || !data.results.length) { flash(data.error || t('noResults')); return; }
         movies = []; save(); render(); // el top sustituye la comparación actual
-        await Promise.all(data.results.map(r => pick(r, `top5_${kind}`)));
+        await Promise.all(data.results.map(r => pick(r, `top5_${kind}`, false)));
       } catch (e) {
         flash(String(e));
       } finally {
@@ -1076,7 +1079,7 @@
         if (items.length) {
           track('open_shared_comparison', { item_count: items.length });
           movies = []; save(); render();
-          items.forEach(it => pick(it, 'shared_link'));
+          items.forEach(it => pick(it, 'shared_link', false));
         }
         return;
       }
