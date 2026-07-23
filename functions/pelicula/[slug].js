@@ -129,11 +129,14 @@ export async function onRequestGet(context) {
   const canonicalUrl = `${SITE_ORIGIN}/pelicula/${canonicalSlug}`;
 
   // Registra el slug para el sitemap (si hay KV vinculado; opcional).
+  // El timestamp en la metadata deja al sitemap ordenar por recencia y quedarse
+  // con las últimas N; TTL de 1 año para que las fichas nunca vistas se limpien solas.
   if (env.CINERANK_KV) {
     context.waitUntil(
       env.CINERANK_KV.put(
         `movie:${canonicalSlug}`,
-        JSON.stringify({ title: meta.title, year: meta.year })
+        JSON.stringify({ title: meta.title, year: meta.year }),
+        { metadata: { t: Date.now() }, expirationTtl: 31536000 }
       ).catch(() => {})
     );
   }
@@ -263,7 +266,12 @@ function renderPage({ data, meta, canonicalSlug, canonicalUrl, isTv, lang }) {
 
   <script type="application/ld+json">${JSON.stringify(ld)}</script>
 
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%236366f1'/%3E%3Ctext x='50' y='70' font-size='58' text-anchor='middle'%3E🎬%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <meta name="theme-color" content="#6366f1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">

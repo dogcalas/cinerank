@@ -1,7 +1,7 @@
 // GET /api/movies/ratings?imdb=tt...&title=...&year=...
 // Aggregates ratings across IMDb, Rotten Tomatoes, FilmAffinity (+ Metacritic
 // & TMDb when API keys are configured) and returns metadata + a /10 average.
-import { aggregate, json } from './_lib.js';
+import { aggregate, json, slugify } from './_lib.js';
 
 // Versión del esquema de la respuesta de aggregate() (ver _lib.js `version`).
 // Va en la clave del KV: al subirla, las entradas viejas quedan huérfanas y
@@ -78,6 +78,19 @@ export async function onRequestGet(context) {
     if (KV && data && data.sourceCount > 0) {
       context.waitUntil(
         KV.put(kvKey, JSON.stringify(data), { expirationTtl: kvTtlFor(data.meta) })
+      );
+    }
+    // En cuanto una peli tiene notas, ya puede estar en el sitemap: registramos
+    // su slug canónico en CINERANK_KV sin esperar a que alguien abra su ficha.
+    // El timestamp en la metadata permite al sitemap ordenar por recencia.
+    if (env.CINERANK_KV && data && data.sourceCount > 0 && data.meta) {
+      const slug = slugify(data.meta.title || title, data.meta.year || year, imdbId);
+      context.waitUntil(
+        env.CINERANK_KV.put(
+          `movie:${slug}`,
+          JSON.stringify({ title: data.meta.title, year: data.meta.year }),
+          { metadata: { t: Date.now() }, expirationTtl: 31536000 }
+        ).catch(() => {})
       );
     }
     return fresh ? json(data, 200, { 'Cache-Control': 'no-store' }) : cacheable;
