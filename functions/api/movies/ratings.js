@@ -6,7 +6,7 @@ import { aggregate, json, slugify } from './_lib.js';
 // Versión del esquema de la respuesta de aggregate() (ver _lib.js `version`).
 // Va en la clave del KV: al subirla, las entradas viejas quedan huérfanas y
 // expiran solas, así un cambio de formato no sirve datos con la forma antigua.
-const KV_SCHEMA = 'v3';
+const KV_SCHEMA = 'v4';
 const DAY = 86400; // 1 día
 const YEAR = 31536000; // 1 año
 

@@ -735,9 +735,19 @@
     // ---------- rendering ----------
     function scoreColor(n) { return n >= 7 ? 'var(--good)' : n >= 5 ? 'var(--mid)' : 'var(--bad)'; }
 
+    // Votos totales sumando las fuentes que los reportan (IMDb, TMDb, Letterboxd).
+    function totalVotes(m) { return (m.ratings || []).reduce((s, r) => s + (r.votes || 0), 0); }
+    // Orden por nota; a igualdad, gana la de más evidencia: primero más fuentes,
+    // luego más votos. Así una nota empatada la desnivela la cantidad de fuentes.
+    function byScore(a, b) {
+      return (b.average ?? -1) - (a.average ?? -1)
+        || (b.sourceCount ?? 0) - (a.sourceCount ?? 0)
+        || totalVotes(b) - totalVotes(a);
+    }
+
     function orderedMovies() {
       const list = [...movies];
-      if (sortMode === 'avg') list.sort((a, b) => (b.average ?? -1) - (a.average ?? -1));
+      if (sortMode === 'avg') list.sort(byScore);
       else if (sortMode === 'runtime')
         list.sort((a, b) => ((a.meta && a.meta.runtime) ?? Infinity) - ((b.meta && b.meta.runtime) ?? Infinity));
       return list;
@@ -751,7 +761,8 @@
     function bestId() {
       const rated = movies.filter(m => m.average != null);
       if (!rated.length) return null;
-      return rated.reduce((a, b) => (b.average > a.average ? b : a)).imdbId;
+      // El mejor por nota, con el mismo desempate por evidencia que el orden.
+      return rated.reduce((a, b) => (byScore(b, a) < 0 ? b : a)).imdbId;
     }
 
     function renderGenreBar() {

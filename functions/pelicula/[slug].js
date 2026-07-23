@@ -21,14 +21,15 @@ const L10N = {
       metacritic: 'Metacritic', filmaffinity: 'FilmAffinity', letterboxd: 'Letterboxd', tmdb: 'TMDb',
     },
     titleSuffix: 'notas y media',
-    avgOf: (n) => `media de ${n} fuentes`,
+    avgOf: (n) => `según ${n} fuente${n === 1 ? '' : 's'}`,
     directedBy: 'Dirigida por',
     series: '📺 Serie',
     min: 'min',
-    avgLabel: 'media',
+    avgLabel: 'nota',
     avgNote: (n, v) =>
-      `Media aritmética de ${n} fuente${n === 1 ? '' : 's'} normalizadas a escala 0–10` +
-      `${v ? `, con ${v} votos en total` : ''}.`,
+      `Nota ponderada de ${n} fuente${n === 1 ? '' : 's'} (0–10): cada fuente pesa ` +
+      `según sus votos y se descuenta algo cuando hay pocas fuentes o pocos votos` +
+      `${v ? `. ${v} votos en total` : ''}.`,
     votes: 'votos',
     synopsis: 'Sinopsis',
     compare: '＋ Comparar con otras',
@@ -48,14 +49,15 @@ const L10N = {
       metacritic: 'Metacritic', filmaffinity: 'FilmAffinity', letterboxd: 'Letterboxd', tmdb: 'TMDb',
     },
     titleSuffix: 'ratings & average',
-    avgOf: (n) => `average of ${n} sources`,
+    avgOf: (n) => `based on ${n} source${n === 1 ? '' : 's'}`,
     directedBy: 'Directed by',
     series: '📺 Series',
     min: 'min',
-    avgLabel: 'avg',
+    avgLabel: 'score',
     avgNote: (n, v) =>
-      `Arithmetic mean of ${n} source${n === 1 ? '' : 's'} normalized to a 0–10 scale` +
-      `${v ? `, with ${v} votes in total` : ''}.`,
+      `Weighted score from ${n} source${n === 1 ? '' : 's'} (0–10): each source is ` +
+      `weighted by its votes, with a deduction when there are few sources or votes` +
+      `${v ? `. ${v} votes in total` : ''}.`,
     votes: 'votes',
     synopsis: 'Synopsis',
     compare: '＋ Compare with others',

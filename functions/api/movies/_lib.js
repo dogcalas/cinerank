@@ -308,18 +308,29 @@ async function fromRottenTomatoes(title, year, fresh, type) {
     };
     const nameM = block.match(/slot="title"[^>]*>([\s\S]*?)<\/a>/);
     const name = nameM ? nameM[1].trim() : '';
-    let score = 0;
     const n = normalizeTitle(name);
-    if (n === want) score += 3;
-    else if (n.includes(want) || want.includes(n)) score += 1;
+    const titleExact = n === want;
+    const titleLoose = !titleExact && (n.includes(want) || want.includes(n));
+    if (!titleExact && !titleLoose) continue; // otro título: no es esta peli
+
     const yr = attr('release-year') || attr('start-year'); // series: start-year
-    if (year && yr && Math.abs(Number(yr) - Number(year)) <= 1) score += 2;
+    const yrNum = yr ? Number(yr) : null;
+    // Descarta homónimas/remakes: si conocemos ambos años y difieren en más de
+    // uno es OTRA película aunque el título calce (p.ej. The Debt Collector de
+    // 2018 cuando buscamos la de 2026). Antes esto sumaba 0 puntos pero se
+    // aceptaba igual, y acababa enlazando a la peli equivocada.
+    if (year && yrNum && Math.abs(yrNum - Number(year)) > 1) continue;
+
+    let score = titleExact ? 3 : 1;
+    if (year && yrNum && Math.abs(yrNum - Number(year)) <= 1) score += 2; // año confirmado
     if (href.includes('/tv/') === wantTv) score += 3; // tipo correcto
     const tomato = attr('tomatometer-score');
     if (!best || score > best.score)
       best = { href, score, tomato: tomato !== '' ? Number(tomato) : null };
   }
-  if (!best || best.score === 0) return null;
+  // Exigimos año confirmado (o desconocido) + título; sin eso, mejor sin RT que
+  // con la peli equivocada. score>=3 garantiza al menos coincidencia de título.
+  if (!best || best.score < 3) return null;
 
   // La página de la ficha añade el score del público (Popcornmeter); si falla,
   // nos quedamos al menos con el Tomatómetro de la búsqueda.
@@ -649,6 +660,69 @@ function mergeMeta(base, incoming) {
   return out;
 }
 
+// ---------- scoring ----------
+// Nota agregada = media ponderada por votos MENOS una penalización por falta de
+// evidencia. Una media aritmética simple deja que una sola fuente entusiasta
+// (o con 3 votos) supere a varias fuentes sólidas; y "encoger hacia la media"
+// apenas separa cuando las notas ya rondan la media (diferencias de décimas).
+// Aquí:
+//   1) cada fuente pesa por su volumen de votos → μ = Σwᵢ·sᵢ / Σwᵢ
+//   2) se resta hasta PENALTY_MAX puntos según lo POCA que sea la evidencia
+//      (pocas fuentes y/o pocos votos).
+// Resultado: a igualdad de nota, más fuentes/votos ⇒ nota visiblemente más alta,
+// y una peli con muchas fuentes muy votadas conserva su nota real (penalización ~0).
+const VOTES_REF = 10000; // votos para que UNA fuente pese ~pleno en μ
+const PENALTY_MAX = 2.0; // puntos que se restan con evidencia casi nula
+const SRC_FULL = 4; // nº de fuentes que ya da confianza plena por cantidad
+const EVIDENCE_FULL = 60000; // votos totales (incl. nominales) para confianza plena
+const CONF_SRC = 0.65; // peso del nº de fuentes en la confianza (resto: votos)
+
+// Peso fijo en μ de las fuentes que no reportan recuento de votos.
+const WEIGHT_NO_VOTES = {
+  metacritic: 0.9, // agregados de crítica profesional: sólidos
+  rt_critics: 0.9,
+  rt_audience: 0.5, // % de público sin volumen conocido
+  filmaffinity: 0.6,
+};
+const WEIGHT_DEFAULT_NO_VOTES = 0.6;
+// "Votos equivalentes" de las fuentes sin recuento, solo para medir confianza:
+// un agregado de crítica representa a muchos evaluadores aunque no publique el nº.
+const NOMINAL_VOTES = { metacritic: 4000, rt_critics: 4000, rt_audience: 1500, filmaffinity: 2000 };
+const NOMINAL_DEFAULT = 1500;
+
+// Peso de una fuente en μ: con votos crece con log(votos) y se satura (0.3 con
+// pocos → 1.2 con muchísimos); sin votos, peso fijo según el tipo de fuente.
+function sourceWeight(r) {
+  if (r.votes && r.votes > 0) {
+    const conf = Math.min(1, Math.log1p(r.votes) / Math.log1p(VOTES_REF));
+    return 0.3 + 0.9 * conf;
+  }
+  return WEIGHT_NO_VOTES[r.key] != null ? WEIGHT_NO_VOTES[r.key] : WEIGHT_DEFAULT_NO_VOTES;
+}
+
+function aggregateScore(unique) {
+  if (!unique.length) return null;
+  let wsum = 0;
+  let wscore = 0;
+  let evidence = 0; // votos totales (reales + nominales) para la confianza
+  for (const r of unique) {
+    const s = (r.value / r.scale) * 10;
+    const w = sourceWeight(r);
+    wsum += w;
+    wscore += w * s;
+    evidence +=
+      r.votes && r.votes > 0
+        ? r.votes
+        : NOMINAL_VOTES[r.key] != null ? NOMINAL_VOTES[r.key] : NOMINAL_DEFAULT;
+  }
+  const mu = wscore / wsum; // media ponderada por votos (0–10)
+  const confSources = Math.min(1, unique.length / SRC_FULL);
+  const confVotes = Math.min(1, Math.log1p(evidence) / Math.log1p(EVIDENCE_FULL));
+  const confidence = CONF_SRC * confSources + (1 - CONF_SRC) * confVotes;
+  const score = mu - PENALTY_MAX * (1 - confidence);
+  return Math.round(Math.max(0, Math.min(10, score)) * 10) / 10;
+}
+
 export async function aggregate({ imdbId, title, year, env, fresh = false, type = '' }) {
   const meta = {
     title: title || null,
@@ -725,15 +799,19 @@ export async function aggregate({ imdbId, title, year, env, fresh = false, type 
       return true;
     })
     .map(({ prio, ...r }) => r);
+  // Nota agregada: media ponderada por votos con penalización por falta de
+  // evidencia (ver aggregateScore). rawAverage conserva la media aritmética
+  // simple por transparencia/depuración; la UI usa solo `average`.
   const normalized = unique.map((r) => (r.value / r.scale) * 10);
-  const average = normalized.length
+  const rawAverage = normalized.length
     ? Math.round(
         (normalized.reduce((a, b) => a + b, 0) / normalized.length) * 10
       ) / 10
     : null;
+  const average = aggregateScore(unique);
 
   return {
-    version: 3, // para distinguir despliegues al depurar
+    version: 4, // v4: nota = media bayesiana ponderada (antes media aritmética)
     imdbId,
     meta,
     ratings: unique.map((r) => ({
@@ -741,6 +819,7 @@ export async function aggregate({ imdbId, title, year, env, fresh = false, type 
       normalized: Math.round(((r.value / r.scale) * 10) * 10) / 10,
     })),
     average,
+    rawAverage,
     sourceCount: unique.length,
     errors,
   };
