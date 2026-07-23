@@ -758,8 +758,10 @@
       if (!genreSel.size) return list;
       return list.filter(m => (m.meta.genres || []).some(g => genreSel.has(g)));
     }
-    function bestId() {
-      const rated = movies.filter(m => m.average != null);
+    // El mejor de la lista que se le pase (ver render: se calcula sobre lo
+    // VISIBLE, para que respete el filtro de géneros).
+    function bestId(list) {
+      const rated = list.filter(m => m.average != null);
       if (!rated.length) return null;
       // El mejor por nota, con el mismo desempate por evidencia que el orden.
       return rated.reduce((a, b) => (byScore(b, a) < 0 ? b : a)).imdbId;
@@ -789,9 +791,11 @@
       const shown = visibleMovies();
       $('count').textContent = t('count', shown.length);
 
-      const best = bestId();
-      const bm = movies.find(m => m.imdbId === best);
-      winner.classList.toggle('show', !!(bm && movies.length > 1 && bm.average != null));
+      // El "mejor valorado" se calcula SOLO sobre lo visible, para que respete
+      // el filtro de géneros; sin al menos dos títulos a la vista no hay ganador.
+      const best = shown.length > 1 ? bestId(shown) : null;
+      const bm = best ? shown.find(m => m.imdbId === best) : null;
+      winner.classList.toggle('show', !!(bm && bm.average != null));
       if (bm) $('winnerName').textContent = `${bm.meta.title}${bm.meta.year ? ' (' + bm.meta.year + ')' : ''} — ${fmt(bm.average)}/10`;
 
       if (tableMode && has) { grid.style.display = 'none'; tableView.classList.add('show'); renderTable(best, shown); return; }
